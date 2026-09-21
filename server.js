@@ -83,7 +83,7 @@ function pick(map, names) {
 function extractLead(req) {
   const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
   const nombre = pick(merged, ["nombre", "name"]);
-  const telefono = pick(merged, ["telefono_whatsapp", "telefono", "whatsapp", "phone"]);
+  const telefono = pick(merged, ["telefono_whatsapp", "telefono", "whatsapp", "phone", "caller_number", "from"]);
   const interes = pick(merged, ["interes", "interest", "rubro", "producto"]).toLowerCase();
   const horario = pick(merged, ["horario_contacto", "horario"]);
   let canal = pick(merged, ["canal_preferido", "canal"]).toLowerCase();
