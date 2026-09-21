@@ -14,7 +14,7 @@ const CLIENT_LABEL = process.env.CLIENT_LABEL || "Genio Demo";
 
 const CANALES = new Set(["whatsapp", "telefono", "email"]);
 const PLACEHOLDER_BAD =
-  /(sin\s+nombre|sin\s+especificar|n[uú]mero\s+entrante|usuario\s+sin|no\s+proporcionad|unknown|\bn\/?a\b|pendiente|placeholder|\b999999\b|\bcaller[_-]?id\b|\btelefono\b|\bwhatsapp\b)/i;
+  /(sin\s+nombre|sin\s+especificar|n[uú]mero\s+entrante|usuario\s+sin|no\s+proporcionad|unknown|\bn\/?a\b|pendiente|placeholder|\b999999\b|\bcaller[_-]?id\b|\btelefono\b|\bwhatsapp\b|por\s+definir|sin\s+horario|a\s+definir|despu[eé]s|luego|cuando\s+sea)/i;
 
 const app = express();
 app.use((req, res, next) => {
