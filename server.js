@@ -116,6 +116,9 @@ function validateLead(lead) {
   if (!CANALES.has(lead.canal_preferido)) {
     return { ok: false, error: "canal_preferido debe ser whatsapp|telefono|email" };
   }
+  if (!lead.notas || looksFake(lead.notas) || /sin\s+notas/i.test(lead.notas)) {
+    return { ok: false, error: "notas reales son requeridas" };
+  }
   return { ok: true };
 }
 
