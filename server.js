@@ -113,9 +113,10 @@ function validateLead(lead) {
   if (!lead.horario_contacto || looksFake(lead.horario_contacto)) {
     return { ok: false, error: "horario_contacto real es requerido" };
   }
-  if (!CANALES.has(lead.canal_preferido)) {
+  if (lead.canal_preferido && !CANALES.has(lead.canal_preferido)) {
     return { ok: false, error: "canal_preferido debe ser whatsapp|telefono|email" };
   }
+  if (!lead.canal_preferido) lead.canal_preferido = "telefono";
   if (!lead.notas || looksFake(lead.notas) || /sin\s+notas/i.test(lead.notas)) {
     return { ok: false, error: "notas reales son requeridas" };
   }
