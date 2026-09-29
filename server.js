@@ -279,7 +279,23 @@ function validatePedido(pedido) {
   return { ok: true };
 }
 
-/** Soften literal \\n / \\r\\n from agents into real newlines; trim each line. */
+/** Soften literal \\n / \\r\\n from agents into real newlines; trim each line;
+ *  normalize common Spanish quantity words to digits (uno→1 … cinco→5). */
+function normalizePedidoQtyWords(line) {
+  const map = {
+    uno: "1",
+    una: "1",
+    dos: "2",
+    tres: "3",
+    cuatro: "4",
+    cinco: "5",
+  };
+  return String(line || "").replace(
+    /\b(uno|una|dos|tres|cuatro|cinco)\b/gi,
+    (m) => map[m.toLowerCase()] || m
+  );
+}
+
 function formatPedidoCompleto(raw) {
   return String(raw || "")
     .replace(/\\r\\n/g, "\n")
@@ -288,7 +304,7 @@ function formatPedidoCompleto(raw) {
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
-    .map((line) => line.trim())
+    .map((line) => normalizePedidoQtyWords(line.trim()))
     .join("\n");
 }
 
