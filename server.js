@@ -206,6 +206,14 @@ function normalizePago(raw) {
   return "";
 }
 
+/** Non-empty RTN; case-insensitive "no" → exact "No"; else free text (name + number). */
+function normalizeRtn(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/^no$/i.test(s)) return "No";
+  return s;
+}
+
 function extractPedido(req) {
   const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
   const nombre_cliente = pick(merged, ["nombre_cliente", "nombre", "name"]);
@@ -216,6 +224,7 @@ function extractPedido(req) {
   const total_pedido = pick(merged, ["total_pedido", "total", "total_del_pedido"]);
   const tipoRaw = pick(merged, ["tipo", "modalidad", "tipo_pedido", "para"]);
   const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
+  const rtnRaw = pick(merged, ["rtn", "RTN", "factura_rtn"]);
   return {
     nombre_cliente,
     pedido_completo,
@@ -223,8 +232,10 @@ function extractPedido(req) {
     total_pedido,
     tipo: normalizeTipo(tipoRaw),
     metodo_pago: normalizePago(pagoRaw),
+    rtn: normalizeRtn(rtnRaw),
     _tipoRaw: tipoRaw,
     _pagoRaw: pagoRaw,
+    _rtnRaw: rtnRaw,
   };
 }
 
@@ -246,6 +257,9 @@ function validatePedido(pedido) {
   }
   if (!pedido.metodo_pago) {
     return { ok: false, error: 'metodo_pago debe ser "Efectivo" o "Tarjeta"' };
+  }
+  if (!pedido.rtn) {
+    return { ok: false, error: "rtn es requerido (No si no quiere factura, o nombre + RTN)" };
   }
   return { ok: true };
 }
@@ -278,6 +292,7 @@ function buildPedidoEmail(pedido) {
     `Total: ${pedido.total_pedido}`,
     `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
+    `RTN: ${pedido.rtn}`,
   ].join("\n");
   const esc = (s) =>
     String(s)
@@ -307,6 +322,7 @@ function buildPedidoEmail(pedido) {
       ${row("Total", pedido.total_pedido)}
       ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
+      ${row("RTN", pedido.rtn)}
     </table>
   </div></body></html>`;
   return { subject, text, html };
@@ -375,8 +391,10 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
     total_pedido: pedido.total_pedido,
     tipo: pedido.tipo,
     metodo_pago: pedido.metodo_pago,
+    rtn: pedido.rtn,
     _tipoRaw: pedido._tipoRaw,
     _pagoRaw: pedido._pagoRaw,
+    _rtnRaw: pedido._rtnRaw,
   });
 
   const validated = validatePedido(pedido);
@@ -409,6 +427,7 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
       to: toEmail,
       tipo: pedido.tipo,
       metodo_pago: pedido.metodo_pago,
+      rtn: pedido.rtn,
     });
   } catch (err) {
     console.error("[pedido] SMTP", err?.message || err);
