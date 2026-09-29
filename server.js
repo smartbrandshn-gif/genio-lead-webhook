@@ -9,6 +9,7 @@ const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_APP_PASSWORD = process.env.SMTP_APP_PASSWORD || "";
 const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "";
+const PEDIDO_TO_EMAIL = process.env.PEDIDO_TO_EMAIL || "";
 const LEAD_FROM_NAME = process.env.LEAD_FROM_NAME || "Genio Demo";
 const CLIENT_LABEL = process.env.CLIENT_LABEL || "Genio Demo";
 
@@ -166,6 +167,139 @@ function buildEmail(lead) {
   return { subject, text, html };
 }
 
+function normalizeTipo(raw) {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!s) return "";
+  if (
+    /\b(recoger|llevar|pickup|para\s+llevar|take\s*away|takeaway|to\s*go)\b/.test(s) ||
+    s === "recoger" ||
+    s === "para llevar"
+  ) {
+    return "recoger";
+  }
+  if (
+    /\b(comer|restaurante|local|dine\s*in|dine-in|aqui|aquí|mesa|en\s+el\s+local|comer\s+en)\b/.test(s) ||
+    /comer\s+en\s+(el\s+)?restaurante/.test(s) ||
+    s === "dine in" ||
+    s === "en el local"
+  ) {
+    return "comer en el restaurante";
+  }
+  return "";
+}
+
+function normalizePago(raw) {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!s) return "";
+  if (/\b(efectivo|cash|dinero|billete|contado)\b/.test(s) || s === "efectivo") return "Efectivo";
+  if (/\b(tarjeta|card|credito|credito|debito|visa|mastercard|credit|debit)\b/.test(s) || s === "tarjeta") {
+    return "Tarjeta";
+  }
+  return "";
+}
+
+function extractPedido(req) {
+  const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  const nombre_cliente = pick(merged, ["nombre_cliente", "nombre", "name"]);
+  const pedido_completo = pick(merged, ["pedido_completo", "pedido", "order"]);
+  let notas = pick(merged, ["notas", "notes"]);
+  // Optional: empty / omit / "sin notas" → treat as empty
+  if (!notas || /sin\s+notas/i.test(notas) || looksFake(notas)) notas = "";
+  const total_pedido = pick(merged, ["total_pedido", "total", "total_del_pedido"]);
+  const tipoRaw = pick(merged, ["tipo", "modalidad", "tipo_pedido", "para"]);
+  const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
+  return {
+    nombre_cliente,
+    pedido_completo,
+    notas,
+    total_pedido,
+    tipo: normalizeTipo(tipoRaw),
+    metodo_pago: normalizePago(pagoRaw),
+    _tipoRaw: tipoRaw,
+    _pagoRaw: pagoRaw,
+  };
+}
+
+function validatePedido(pedido) {
+  if (!pedido.nombre_cliente || looksFake(pedido.nombre_cliente)) {
+    return { ok: false, error: "nombre_cliente real es requerido" };
+  }
+  if (!pedido.pedido_completo || looksFake(pedido.pedido_completo)) {
+    return { ok: false, error: "pedido_completo es requerido" };
+  }
+  if (!pedido.total_pedido || looksFake(pedido.total_pedido)) {
+    return { ok: false, error: "total_pedido es requerido" };
+  }
+  if (!pedido.tipo) {
+    return {
+      ok: false,
+      error: 'tipo debe ser "recoger" o "comer en restaurante" (se aceptan variantes como para llevar, pickup, dine in)',
+    };
+  }
+  if (!pedido.metodo_pago) {
+    return { ok: false, error: 'metodo_pago debe ser "Efectivo" o "Tarjeta"' };
+  }
+  return { ok: true };
+}
+
+function buildPedidoEmail(pedido) {
+  const ts = guatemalaTimestamp();
+  const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.tipo} — ${pedido.total_pedido}`;
+  const text = [
+    "Nuevo pedido — Wangs",
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    `Cliente: ${pedido.nombre_cliente}`,
+    `Pedido: ${pedido.pedido_completo}`,
+    `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
+    `Total: ${pedido.total_pedido}`,
+    `Tipo: ${pedido.tipo}`,
+    `Método de pago: ${pedido.metodo_pago}`,
+  ].join("\n");
+  const esc = (s) =>
+    String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const row = (l, v) =>
+    `<tr><td style="padding:6px 12px;font-weight:600;vertical-align:top">${esc(l)}</td><td style="padding:6px 12px">${esc(v)}</td></tr>`;
+  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+    <div style="background:#b45309;color:#fff;padding:16px 20px">
+      <h1 style="margin:0;font-size:18px">Pedido — Wangs</h1>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">Genio · notificaciones</p>
+    </div>
+    <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${esc(ts)}</p>
+    <table style="width:100%;border-collapse:collapse;margin:8px 0 16px">
+      ${row("Cliente", pedido.nombre_cliente)}
+      ${row("Pedido completo", pedido.pedido_completo)}
+      ${row("Notas / solicitudes", pedido.notas || "(ninguna)")}
+      ${row("Total", pedido.total_pedido)}
+      ${row("Tipo", pedido.tipo)}
+      ${row("Método de pago", pedido.metodo_pago)}
+    </table>
+  </div></body></html>`;
+  return { subject, text, html };
+}
+
+function createTransport() {
+  return nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: { user: SMTP_USER, pass: SMTP_APP_PASSWORD },
+  });
+}
+
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -173,6 +307,7 @@ app.get("/health", (_req, res) => {
     client: CLIENT_LABEL,
     time: guatemalaTimestamp(),
     smtpConfigured: Boolean(SMTP_USER && SMTP_APP_PASSWORD && LEAD_TO_EMAIL),
+    pedidoToConfigured: Boolean(PEDIDO_TO_EMAIL || LEAD_TO_EMAIL),
     secretConfigured: Boolean(LEAD_WEBHOOK_SECRET),
   });
 });
@@ -190,12 +325,7 @@ app.post("/webhooks/enviar-lead", async (req, res) => {
   if (!lead.caller_id && lead.telefono_whatsapp) lead.caller_id = lead.telefono_whatsapp;
 
   try {
-    const transport = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_APP_PASSWORD },
-    });
+    const transport = createTransport();
     const { subject, text, html } = buildEmail(lead);
     const info = await transport.sendMail({
       from: `"${LEAD_FROM_NAME}" <${SMTP_USER}>`,
@@ -208,6 +338,59 @@ app.post("/webhooks/enviar-lead", async (req, res) => {
     return res.json({ ok: true, message: "Lead enviado", messageId: info.messageId });
   } catch (err) {
     console.error("[lead] SMTP", err?.message || err);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+  }
+});
+
+app.post("/webhooks/enviar-pedido", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const pedido = extractPedido(req);
+  console.log("[pedido] inbound", {
+    nombre_cliente: pedido.nombre_cliente,
+    pedido_completo: pedido.pedido_completo,
+    notas: pedido.notas,
+    total_pedido: pedido.total_pedido,
+    tipo: pedido.tipo,
+    metodo_pago: pedido.metodo_pago,
+    _tipoRaw: pedido._tipoRaw,
+    _pagoRaw: pedido._pagoRaw,
+  });
+
+  const validated = validatePedido(pedido);
+  if (!validated.ok) return res.status(400).json({ ok: false, error: validated.error });
+
+  const toEmail = PEDIDO_TO_EMAIL || LEAD_TO_EMAIL;
+  if (!toEmail) {
+    return res.status(500).json({ ok: false, error: "PEDIDO_TO_EMAIL / LEAD_TO_EMAIL no configurado" });
+  }
+  if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+    return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+  }
+
+  try {
+    const transport = createTransport();
+    const { subject, text, html } = buildPedidoEmail(pedido);
+    const fromName = LEAD_FROM_NAME || "Pedido Wangs";
+    const info = await transport.sendMail({
+      from: `"${fromName}" <${SMTP_USER}>`,
+      to: toEmail,
+      subject,
+      text,
+      html,
+    });
+    console.log(`[pedido] enviado a ${toEmail} id=${info.messageId}`);
+    return res.json({
+      ok: true,
+      message: "Pedido enviado",
+      messageId: info.messageId,
+      to: toEmail,
+      tipo: pedido.tipo,
+      metodo_pago: pedido.metodo_pago,
+    });
+  } catch (err) {
+    console.error("[pedido] SMTP", err?.message || err);
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
   }
 });
