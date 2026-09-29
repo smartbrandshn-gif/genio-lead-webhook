@@ -250,15 +250,30 @@ function validatePedido(pedido) {
   return { ok: true };
 }
 
+/** Soften literal \\n / \\r\\n from agents into real newlines; trim each line. */
+function formatPedidoCompleto(raw) {
+  return String(raw || "")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n");
+}
+
 function buildPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
   const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.tipo} — ${pedido.total_pedido}`;
+  const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
   const text = [
     "Nuevo pedido — Wangs",
     "",
     `Fecha (America/Guatemala): ${ts}`,
     `Cliente: ${pedido.nombre_cliente}`,
-    `Pedido: ${pedido.pedido_completo}`,
+    "Pedido:",
+    pedidoBody,
     `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
     `Total: ${pedido.total_pedido}`,
     `Tipo: ${pedido.tipo}`,
@@ -272,6 +287,10 @@ function buildPedidoEmail(pedido) {
       .replace(/"/g, "&quot;");
   const row = (l, v) =>
     `<tr><td style="padding:6px 12px;font-weight:600;vertical-align:top">${esc(l)}</td><td style="padding:6px 12px">${esc(v)}</td></tr>`;
+  const pedidoHtml = `<div style="padding:4px 20px 12px">
+      <div style="font-weight:600;margin:0 0 8px;font-size:14px">Pedido</div>
+      <pre style="margin:0;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;white-space:pre-line;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace,system-ui;font-size:14px;line-height:1.45;color:#1c1917">${esc(pedidoBody)}</pre>
+    </div>`;
   const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
   <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
     <div style="background:#b45309;color:#fff;padding:16px 20px">
@@ -279,9 +298,11 @@ function buildPedidoEmail(pedido) {
       <p style="margin:4px 0 0;opacity:.9;font-size:13px">Genio · notificaciones</p>
     </div>
     <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${esc(ts)}</p>
-    <table style="width:100%;border-collapse:collapse;margin:8px 0 16px">
+    <table style="width:100%;border-collapse:collapse;margin:8px 0 0">
       ${row("Cliente", pedido.nombre_cliente)}
-      ${row("Pedido completo", pedido.pedido_completo)}
+    </table>
+    ${pedidoHtml}
+    <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
       ${row("Notas / solicitudes", pedido.notas || "(ninguna)")}
       ${row("Total", pedido.total_pedido)}
       ${row("Tipo", pedido.tipo)}
