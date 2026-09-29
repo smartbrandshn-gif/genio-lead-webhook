@@ -214,6 +214,14 @@ function normalizeRtn(raw) {
   return s;
 }
 
+/** Cliente phone/number (Color ID) so kitchen can call if order issues; required non-empty string. */
+function normalizeColorId(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (looksFake(s)) return "";
+  return s;
+}
+
 function extractPedido(req) {
   const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
   const nombre_cliente = pick(merged, ["nombre_cliente", "nombre", "name"]);
@@ -225,6 +233,8 @@ function extractPedido(req) {
   const tipoRaw = pick(merged, ["tipo", "modalidad", "tipo_pedido", "para"]);
   const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
   const rtnRaw = pick(merged, ["rtn", "RTN", "factura_rtn"]);
+  // Prefer color_id / colorID / colorId / color_id_cliente — avoid telefono/phone/caller_id (lead aliases + placeholders)
+  const colorIdRaw = pick(merged, ["color_id", "colorID", "colorId", "color_id_cliente", "Color ID"]);
   return {
     nombre_cliente,
     pedido_completo,
@@ -233,9 +243,11 @@ function extractPedido(req) {
     tipo: normalizeTipo(tipoRaw),
     metodo_pago: normalizePago(pagoRaw),
     rtn: normalizeRtn(rtnRaw),
+    color_id: normalizeColorId(colorIdRaw),
     _tipoRaw: tipoRaw,
     _pagoRaw: pagoRaw,
     _rtnRaw: rtnRaw,
+    _colorIdRaw: colorIdRaw,
   };
 }
 
@@ -260,6 +272,9 @@ function validatePedido(pedido) {
   }
   if (!pedido.rtn) {
     return { ok: false, error: "rtn es requerido (No si no quiere factura, o nombre + RTN)" };
+  }
+  if (!pedido.color_id) {
+    return { ok: false, error: "color_id es requerido (número/color ID del cliente para contactarlo)" };
   }
   return { ok: true };
 }
@@ -293,6 +308,7 @@ function buildPedidoEmail(pedido) {
     `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
+    `Color ID: ${pedido.color_id}`,
   ].join("\n");
   const esc = (s) =>
     String(s)
@@ -323,6 +339,7 @@ function buildPedidoEmail(pedido) {
       ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
       ${row("RTN", pedido.rtn)}
+      ${row("Color ID", pedido.color_id)}
     </table>
   </div></body></html>`;
   return { subject, text, html };
@@ -392,9 +409,11 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
     tipo: pedido.tipo,
     metodo_pago: pedido.metodo_pago,
     rtn: pedido.rtn,
+    color_id: pedido.color_id,
     _tipoRaw: pedido._tipoRaw,
     _pagoRaw: pedido._pagoRaw,
     _rtnRaw: pedido._rtnRaw,
+    _colorIdRaw: pedido._colorIdRaw,
   });
 
   const validated = validatePedido(pedido);
@@ -428,6 +447,7 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
       tipo: pedido.tipo,
       metodo_pago: pedido.metodo_pago,
       rtn: pedido.rtn,
+      color_id: pedido.color_id,
     });
   } catch (err) {
     console.error("[pedido] SMTP", err?.message || err);

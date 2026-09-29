@@ -17,4 +17,4 @@ Pedido Wangs: `POST /webhooks/enviar-pedido` con header `X-Lead-Secret`
 ### Pedido env
 
 - `PEDIDO_TO_EMAIL` — destino de pedidos Wangs (si falta, usa `LEAD_TO_EMAIL`)
-- Campos: `nombre_cliente`, `pedido_completo`, `notas` (opcional), `total_pedido`, `tipo` (`recoger` | `comer en restaurante`), `metodo_pago` (`Efectivo` | `Tarjeta`)
+- Campos: `nombre_cliente`, `pedido_completo`, `notas` (opcional), `total_pedido`, `tipo` (`recoger` | `comer en restaurante`), `metodo_pago` (`Efectivo` | `Tarjeta`), `rtn` (requerido; `No` si no factura), `color_id` (requerido; número/color ID del cliente)
