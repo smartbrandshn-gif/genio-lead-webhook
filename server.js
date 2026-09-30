@@ -92,8 +92,8 @@ function extractLead(req) {
   if (canal === "llamada" || canal === "phone") canal = "telefono";
   if (canal === "wa") canal = "whatsapp";
   const notas = pick(merged, ["notas", "notes", "summary"]);
-  let caller_id = pick(merged, ["caller_id", "callerId"]);
-  if (looksFake(caller_id)) caller_id = "";
+  // Same multi-source phone resolve as pedidos (body.caller_id → X-Caller-Number)
+  const phone = resolveCallerPhone(req);
   return {
     nombre,
     telefono_whatsapp: telefono,
@@ -101,7 +101,12 @@ function extractLead(req) {
     horario_contacto: horario,
     canal_preferido: canal,
     notas,
-    caller_id,
+    caller_id: phone.caller_id,
+    _callerIdSource: phone.source,
+    _bodyKeys: bodyKeysForLog(req),
+    _xCallerNumberPresent: phone.xCallerNumberPresent,
+    _callerIdDestTestPresent: phone.callerIdDestTestPresent,
+    _callerIdDestTestForLog: phone.callerIdDestTestForLog,
   };
 }
 
@@ -222,6 +227,51 @@ function normalizeCallerId(raw) {
   return s;
 }
 
+/**
+ * Resolve customer phone for Wangs pedidos / lead Número de cliente.
+ * Order (first non-empty after normalize):
+ *   1) body.caller_id (or body.callerId)
+ *   2) header X-Caller-Number (case-insensitive; system vars)
+ * Never use destination_number or caller_id_dest_test as the customer phone
+ * (caller_id_dest_test is logged only for diagnostics).
+ */
+function resolveCallerPhone(req) {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const bodyRaw =
+    body.caller_id != null && String(body.caller_id).trim() !== ""
+      ? body.caller_id
+      : body.callerId != null && String(body.callerId).trim() !== ""
+        ? body.callerId
+        : "";
+  // Express req.get is case-insensitive; detect header key presence separately
+  const headerHeaderPresent = Object.keys(req.headers || {}).some(
+    (k) => k.toLowerCase() === "x-caller-number"
+  );
+  const headerRaw = req.get("X-Caller-Number") || "";
+  const fromBody = normalizeCallerId(bodyRaw);
+  const fromHeader = normalizeCallerId(headerRaw);
+  const resolved = fromBody || fromHeader || "";
+  let source = "";
+  if (fromBody) source = "body.caller_id";
+  else if (fromHeader) source = "header.X-Caller-Number";
+  const destTestRaw =
+    body.caller_id_dest_test != null ? String(body.caller_id_dest_test).trim() : "";
+  return {
+    caller_id: resolved,
+    source,
+    bodyCallerIdPresent: Boolean(String(bodyRaw || "").trim()),
+    xCallerNumberPresent: headerHeaderPresent,
+    callerIdDestTestPresent: Boolean(destTestRaw),
+    callerIdDestTestForLog: destTestRaw || undefined,
+    _callerIdRaw: bodyRaw || headerRaw || "",
+  };
+}
+
+function bodyKeysForLog(req) {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  return Object.keys(body);
+}
+
 function extractPedido(req) {
   const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
   const nombre_cliente = pick(merged, ["nombre_cliente", "nombre", "name"]);
@@ -233,8 +283,7 @@ function extractPedido(req) {
   const tipoRaw = pick(merged, ["tipo", "modalidad", "tipo_pedido", "para"]);
   const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
   const rtnRaw = pick(merged, ["rtn", "RTN", "factura_rtn"]);
-  // Caller phone from the inbound call — prefer caller_id / callerId / caller_number
-  const callerIdRaw = pick(merged, ["caller_id", "callerId", "caller_number", "from", "telefono", "phone"]);
+  const phone = resolveCallerPhone(req);
   return {
     nombre_cliente,
     pedido_completo,
@@ -243,11 +292,16 @@ function extractPedido(req) {
     tipo: normalizeTipo(tipoRaw),
     metodo_pago: normalizePago(pagoRaw),
     rtn: normalizeRtn(rtnRaw),
-    caller_id: normalizeCallerId(callerIdRaw),
+    caller_id: phone.caller_id,
     _tipoRaw: tipoRaw,
     _pagoRaw: pagoRaw,
     _rtnRaw: rtnRaw,
-    _callerIdRaw: callerIdRaw,
+    _callerIdRaw: phone._callerIdRaw,
+    _callerIdSource: phone.source,
+    _bodyKeys: bodyKeysForLog(req),
+    _xCallerNumberPresent: phone.xCallerNumberPresent,
+    _callerIdDestTestPresent: phone.callerIdDestTestPresent,
+    _callerIdDestTestForLog: phone.callerIdDestTestForLog,
   };
 }
 
@@ -387,7 +441,23 @@ app.post("/webhooks/enviar-lead", async (req, res) => {
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
 
   const lead = extractLead(req);
-  console.log("[lead] inbound", lead);
+  console.log("[lead] inbound meta", {
+    bodyKeys: lead._bodyKeys,
+    xCallerNumberPresent: lead._xCallerNumberPresent,
+    callerIdSource: lead._callerIdSource || "(none)",
+    callerIdDestTestPresent: lead._callerIdDestTestPresent,
+    // caller_id_dest_test logged for diagnostics only — never used as customer phone
+    callerIdDestTest: lead._callerIdDestTestForLog,
+  });
+  console.log("[lead] inbound", {
+    nombre: lead.nombre,
+    telefono_whatsapp: lead.telefono_whatsapp,
+    interes: lead.interes,
+    horario_contacto: lead.horario_contacto,
+    canal_preferido: lead.canal_preferido,
+    notas: lead.notas,
+    caller_id: lead.caller_id,
+  });
 
   const validated = validateLead(lead);
   if (!validated.ok) return res.status(400).json({ ok: false, error: validated.error });
@@ -417,6 +487,14 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
 
   const pedido = extractPedido(req);
+  console.log("[pedido] inbound meta", {
+    bodyKeys: pedido._bodyKeys,
+    xCallerNumberPresent: pedido._xCallerNumberPresent,
+    callerIdSource: pedido._callerIdSource || "(none)",
+    callerIdDestTestPresent: pedido._callerIdDestTestPresent,
+    // caller_id_dest_test logged for diagnostics only — never used as customer phone
+    callerIdDestTest: pedido._callerIdDestTestForLog,
+  });
   console.log("[pedido] inbound", {
     nombre_cliente: pedido.nombre_cliente,
     pedido_completo: pedido.pedido_completo,
@@ -430,6 +508,7 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
     _pagoRaw: pedido._pagoRaw,
     _rtnRaw: pedido._rtnRaw,
     _callerIdRaw: pedido._callerIdRaw,
+    _callerIdSource: pedido._callerIdSource,
   });
 
   const validated = validatePedido(pedido);
