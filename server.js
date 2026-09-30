@@ -137,7 +137,7 @@ function buildEmail(lead) {
     `Horario: ${lead.horario_contacto}`,
     `Canal: ${lead.canal_preferido}`,
     `Notas: ${lead.notas || "(sin notas)"}`,
-    `Caller ID: ${lead.caller_id || "(n/a)"}`,
+    `Número de cliente: ${lead.caller_id || "(n/a)"}`,
   ].join("\n");
   const esc = (s) =>
     String(s)
@@ -161,7 +161,7 @@ function buildEmail(lead) {
       ${row("Horario", lead.horario_contacto)}
       ${row("Canal", lead.canal_preferido)}
       ${row("Notas", lead.notas || "(sin notas)")}
-      ${row("Caller ID", lead.caller_id || "(n/a)")}
+      ${row("Número de cliente", lead.caller_id || "(n/a)")}
     </table>
   </div></body></html>`;
   return { subject, text, html };
@@ -324,7 +324,7 @@ function buildPedidoEmail(pedido) {
     `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
-    `Caller ID: ${pedido.caller_id}`,
+    `Número de cliente: ${pedido.caller_id}`,
   ].join("\n");
   const esc = (s) =>
     String(s)
@@ -355,7 +355,7 @@ function buildPedidoEmail(pedido) {
       ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
       ${row("RTN", pedido.rtn)}
-      ${row("Caller ID", pedido.caller_id)}
+      ${row("Número de cliente", pedido.caller_id)}
     </table>
   </div></body></html>`;
   return { subject, text, html };
