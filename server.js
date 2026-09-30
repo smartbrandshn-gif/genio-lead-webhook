@@ -325,10 +325,10 @@ function validatePedido(pedido) {
     return { ok: false, error: 'metodo_pago debe ser "Efectivo" o "Tarjeta"' };
   }
   if (!pedido.rtn) {
-    return { ok: false, error: "rtn es requerido (No si no quiere factura, o nombre + RTN)" };
+    return { ok: false, error: "Falta el campo rtn: usa No si no quiere factura, o nombre y número de RTN si sí" };
   }
   if (!pedido.caller_id) {
-    return { ok: false, error: "caller_id es requerido (teléfono del cliente desde la llamada)" };
+    return { ok: false, error: "Falta el teléfono del cliente: envía caller_id con el número de la llamada" };
   }
   return { ok: true };
 }
