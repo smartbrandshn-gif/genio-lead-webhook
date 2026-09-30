@@ -214,7 +214,7 @@ function normalizeRtn(raw) {
   return s;
 }
 
-/** Cliente phone from the call (Caller ID); required non-empty; reject placeholders. */
+/** Cliente phone from the call (Caller ID); optional — empty/placeholder → "". */
 function normalizeCallerId(raw) {
   const s = String(raw || "").trim();
   if (!s) return "";
@@ -273,8 +273,9 @@ function validatePedido(pedido) {
   if (!pedido.rtn) {
     return { ok: false, error: "rtn es requerido (No si no quiere factura, o nombre + RTN)" };
   }
+  // caller_id preferred but optional: xAI/system often omits it; still send the email
   if (!pedido.caller_id) {
-    return { ok: false, error: "caller_id es requerido (teléfono del cliente desde la llamada)" };
+    pedido.caller_id = "(no disponible)";
   }
   return { ok: true };
 }
