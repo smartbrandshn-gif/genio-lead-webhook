@@ -219,41 +219,46 @@ function normalizeRtn(raw) {
   return s;
 }
 
-/** Cliente phone from the call (Caller ID); empty/placeholders → ""; pedidos treat missing as optional. */
+/** número de cliente: digits the customer dictates, or "no" if none. */
 function normalizeCallerId(raw) {
   const s = String(raw || "").trim();
-  if (!s) return "";
-  if (looksFake(s)) return "";
+  if (!s) return "no";
+  if (/^no$/i.test(s)) return "no";
+  if (looksFake(s)) return "no";
   return s;
 }
 
 /**
- * Resolve customer phone for Wangs pedidos / lead Número de cliente.
- * Order (first non-empty after normalize):
- *   1) body.caller_id (or body.callerId)
- *   2) header X-Caller-Number (case-insensitive; system vars)
- * Never use destination_number or caller_id_dest_test as the customer phone
- * (caller_id_dest_test is logged only for diagnostics).
+ * Resolve número de cliente for Wangs pedidos.
+ * Order: body.numero_cliente / caller_id → header X-Caller-Number (digits only).
+ * Missing → "no". Never use destination_number as the customer phone.
  */
 function resolveCallerPhone(req) {
   const body = req.body && typeof req.body === "object" ? req.body : {};
   const bodyRaw =
-    body.caller_id != null && String(body.caller_id).trim() !== ""
-      ? body.caller_id
-      : body.callerId != null && String(body.callerId).trim() !== ""
-        ? body.callerId
-        : "";
+    body.numero_cliente != null && String(body.numero_cliente).trim() !== ""
+      ? body.numero_cliente
+      : body.caller_id != null && String(body.caller_id).trim() !== ""
+        ? body.caller_id
+        : body.callerId != null && String(body.callerId).trim() !== ""
+          ? body.callerId
+          : body.telefono != null && String(body.telefono).trim() !== ""
+            ? body.telefono
+            : "";
   // Express req.get is case-insensitive; detect header key presence separately
   const headerHeaderPresent = Object.keys(req.headers || {}).some(
     (k) => k.toLowerCase() === "x-caller-number"
   );
   const headerRaw = req.get("X-Caller-Number") || "";
-  const fromBody = normalizeCallerId(bodyRaw);
-  const fromHeader = normalizeCallerId(headerRaw);
-  const resolved = fromBody || fromHeader || "";
+  const fromBody = bodyRaw ? normalizeCallerId(bodyRaw) : "";
+  const fromHeaderRaw = headerRaw ? normalizeCallerId(headerRaw) : "";
+  const fromHeader = fromHeaderRaw && fromHeaderRaw !== "no" ? fromHeaderRaw : "";
+  // Prefer client-dictated body; header only if it has real digits
+  const resolved = (fromBody && fromBody !== "no" ? fromBody : "") || fromHeader || fromBody || "no";
   let source = "";
-  if (fromBody) source = "body.caller_id";
+  if (fromBody && fromBody !== "no") source = "body.numero_cliente";
   else if (fromHeader) source = "header.X-Caller-Number";
+  else source = "default.no";
   const destTestRaw =
     body.caller_id_dest_test != null ? String(body.caller_id_dest_test).trim() : "";
   return {
@@ -327,7 +332,7 @@ function validatePedido(pedido) {
   if (!pedido.rtn) {
     return { ok: false, error: "Falta el campo rtn: usa No si no quiere factura, o nombre y número de RTN si sí" };
   }
-  // caller_id / phone is optional for pedidos: missing → email uses "No disponible"
+  // número de cliente: digits or "no" (never blocks the email)
   return { ok: true };
 }
 
@@ -364,7 +369,7 @@ function buildPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
   const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.tipo} — ${pedido.total_pedido}`;
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
-  const numeroCliente = pedido.caller_id || "No disponible";
+  const numeroCliente = pedido.caller_id || "no";
   const text = [
     "Nuevo pedido — Wangs",
     "",
@@ -377,7 +382,7 @@ function buildPedidoEmail(pedido) {
     `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
-    `caller id: ${numeroCliente}`,
+    `número de cliente: ${numeroCliente}`,
   ].join("\n");
   const esc = (s) =>
     String(s)
@@ -408,7 +413,7 @@ function buildPedidoEmail(pedido) {
       ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
       ${row("RTN", pedido.rtn)}
-      ${row("caller id", numeroCliente)}
+      ${row("número de cliente", numeroCliente)}
     </table>
   </div></body></html>`;
   return { subject, text, html };
