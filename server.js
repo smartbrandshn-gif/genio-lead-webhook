@@ -377,7 +377,7 @@ function buildPedidoEmail(pedido) {
     `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
-    `Número de cliente: ${numeroCliente}`,
+    `caller id: ${numeroCliente}`,
   ].join("\n");
   const esc = (s) =>
     String(s)
@@ -408,7 +408,7 @@ function buildPedidoEmail(pedido) {
       ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
       ${row("RTN", pedido.rtn)}
-      ${row("Número de cliente", numeroCliente)}
+      ${row("caller id", numeroCliente)}
     </table>
   </div></body></html>`;
   return { subject, text, html };
