@@ -17,4 +17,4 @@ Pedido Wangs: `POST /webhooks/enviar-pedido` con header `X-Lead-Secret`
 ### Pedido env
 
 - `PEDIDO_TO_EMAIL` — destino de pedidos Wangs (si falta, usa `LEAD_TO_EMAIL`)
-- Campos: `nombre_cliente`, `pedido_completo`, `notas` (opcional), `total_pedido`, `tipo` (`recoger` | `comer en restaurante`), `metodo_pago` (`Efectivo` | `Tarjeta`), `rtn` (requerido; `No` si no factura), teléfono del cliente (**requerido**) resuelto en orden: `body.caller_id` → header `X-Caller-Number` (system vars). `caller_id_dest_test` se loguea solo; nunca se usa `destination_number` como teléfono del cliente.
+- Campos: `nombre_cliente`, `pedido_completo`, `notas` (opcional), `total_pedido`, `tipo` (`recoger` | `comer en restaurante`), `metodo_pago` (`Efectivo` | `Tarjeta`), `rtn` (requerido; `No` si no factura), teléfono del cliente (**opcional**) resuelto en orden: `body.caller_id` → header `X-Caller-Number` (system vars). Si falta, el email usa `Número de cliente: No disponible` y responde 200. `caller_id_dest_test` se loguea solo; nunca se usa `destination_number` como teléfono del cliente.

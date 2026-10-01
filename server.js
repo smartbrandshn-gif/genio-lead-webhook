@@ -219,7 +219,7 @@ function normalizeRtn(raw) {
   return s;
 }
 
-/** Cliente phone from the call (Caller ID); required non-empty; reject placeholders. */
+/** Cliente phone from the call (Caller ID); empty/placeholders → ""; pedidos treat missing as optional. */
 function normalizeCallerId(raw) {
   const s = String(raw || "").trim();
   if (!s) return "";
@@ -327,9 +327,7 @@ function validatePedido(pedido) {
   if (!pedido.rtn) {
     return { ok: false, error: "Falta el campo rtn: usa No si no quiere factura, o nombre y número de RTN si sí" };
   }
-  if (!pedido.caller_id) {
-    return { ok: false, error: "Falta el teléfono del cliente: envía caller_id con el número de la llamada" };
-  }
+  // caller_id / phone is optional for pedidos: missing → email uses "No disponible"
   return { ok: true };
 }
 
@@ -366,6 +364,7 @@ function buildPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
   const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.tipo} — ${pedido.total_pedido}`;
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
+  const numeroCliente = pedido.caller_id || "No disponible";
   const text = [
     "Nuevo pedido — Wangs",
     "",
@@ -378,7 +377,7 @@ function buildPedidoEmail(pedido) {
     `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
-    `Número de cliente: ${pedido.caller_id}`,
+    `Número de cliente: ${numeroCliente}`,
   ].join("\n");
   const esc = (s) =>
     String(s)
@@ -409,7 +408,7 @@ function buildPedidoEmail(pedido) {
       ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
       ${row("RTN", pedido.rtn)}
-      ${row("Número de cliente", pedido.caller_id)}
+      ${row("Número de cliente", numeroCliente)}
     </table>
   </div></body></html>`;
   return { subject, text, html };
@@ -542,7 +541,7 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
       tipo: pedido.tipo,
       metodo_pago: pedido.metodo_pago,
       rtn: pedido.rtn,
-      caller_id: pedido.caller_id,
+      caller_id: pedido.caller_id || "No disponible",
     });
   } catch (err) {
     console.error("[pedido] SMTP", err?.message || err);
