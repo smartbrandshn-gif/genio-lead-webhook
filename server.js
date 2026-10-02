@@ -219,7 +219,7 @@ function normalizeRtn(raw) {
   return s;
 }
 
-/** número de cliente: digits the customer dictates, or "no" if none. */
+/** número de cliente: digits the customer dictates. Empty/fake → "no" (pedido validation will reject "no"). */
 function normalizeCallerId(raw) {
   const s = String(raw || "").trim();
   if (!s) return "no";
@@ -231,7 +231,7 @@ function normalizeCallerId(raw) {
 /**
  * Resolve número de cliente for Wangs pedidos.
  * Order: body.numero_cliente / caller_id → header X-Caller-Number (digits only).
- * Missing → "no". Never use destination_number as the customer phone.
+ * Missing → "no" (validatePedido rejects). Never use destination_number as the customer phone.
  */
 function resolveCallerPhone(req) {
   const body = req.body && typeof req.body === "object" ? req.body : {};
@@ -332,7 +332,20 @@ function validatePedido(pedido) {
   if (!pedido.rtn) {
     return { ok: false, error: "Falta el campo rtn: usa No si no quiere factura, o nombre y número de RTN si sí" };
   }
-  // número de cliente: digits or "no" (never blocks the email)
+  // número de cliente: MUST be real digits the customer gave (never invent / never "no")
+  const phone = String(pedido.caller_id || "").trim();
+  if (
+    !phone ||
+    /^no$/i.test(phone) ||
+    looksFake(phone) ||
+    !/\d{7,}/.test(phone)
+  ) {
+    return {
+      ok: false,
+      error:
+        "numero_cliente real es requerido: digitos que el cliente diga (no inventar, no omitir)",
+    };
+  }
   return { ok: true };
 }
 
