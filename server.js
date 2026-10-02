@@ -288,6 +288,7 @@ function extractPedido(req) {
   const tipoRaw = pick(merged, ["tipo", "modalidad", "tipo_pedido", "para"]);
   const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
   const rtnRaw = pick(merged, ["rtn", "RTN", "factura_rtn"]);
+  const motivoRaw = pick(merged, ["motivo_cancelacion", "motivo", "razon_cancelacion", "reason"]);
   const phone = resolveCallerPhone(req);
   return {
     nombre_cliente,
@@ -297,6 +298,7 @@ function extractPedido(req) {
     tipo: normalizeTipo(tipoRaw),
     metodo_pago: normalizePago(pagoRaw),
     rtn: normalizeRtn(rtnRaw),
+    motivo_cancelacion: motivoRaw && !looksFake(motivoRaw) ? String(motivoRaw).trim() : "",
     caller_id: phone.caller_id,
     _tipoRaw: tipoRaw,
     _pagoRaw: pagoRaw,
@@ -376,6 +378,57 @@ function formatPedidoCompleto(raw) {
     .split("\n")
     .map((line) => normalizePedidoQtyWords(line.trim()))
     .join("\n");
+}
+
+
+function buildCancelPedidoEmail(pedido) {
+  const ts = guatemalaTimestamp();
+  const subject = `[CANCELADO Wangs] ${pedido.nombre_cliente} — ${pedido.tipo} — ${pedido.total_pedido}`;
+  const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
+  const numeroCliente = pedido.caller_id || "no";
+  const motivo = pedido.motivo_cancelacion || "El cliente canceló el pedido en la llamada";
+  const text = [
+    "PEDIDO CANCELADO — Wangs",
+    "NO PREPARAR / NO ENTREGAR",
+    `Hora: ${ts}`,
+    `Motivo: ${motivo}`,
+    "",
+    `Cliente: ${pedido.nombre_cliente}`,
+    "Pedido (cancelado):",
+    pedidoBody,
+    `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
+    `Total: ${pedido.total_pedido}`,
+    `Tipo: ${pedido.tipo}`,
+    `Método de pago: ${pedido.metodo_pago}`,
+    `RTN: ${pedido.rtn}`,
+    `número de cliente: ${numeroCliente}`,
+  ].join("\n");
+  const pedidoHtml = `<div style="padding:4px 20px 12px">
+      <div style="font-weight:600;margin:0 0 8px;font-size:14px">Pedido cancelado</div>
+      <pre style="margin:0;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;white-space:pre-line;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace,system-ui;font-size:14px;line-height:1.45;color:#1c1917">${esc(pedidoBody)}</pre>
+    </div>`;
+  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+    <div style="background:#b91c1c;color:#fff;padding:16px 20px">
+      <h1 style="margin:0;font-size:18px">PEDIDO CANCELADO — Wangs</h1>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">NO PREPARAR · Genio</p>
+    </div>
+    <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${esc(ts)}</p>
+    <table style="width:100%;border-collapse:collapse;margin:8px 0 0">
+      ${row("Motivo", motivo)}
+      ${row("Cliente", pedido.nombre_cliente)}
+    </table>
+    ${pedidoHtml}
+    <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
+      ${row("Notas / solicitudes", pedido.notas || "(ninguna)")}
+      ${row("Total", pedido.total_pedido)}
+      ${row("Tipo", pedido.tipo)}
+      ${row("Método de pago", pedido.metodo_pago)}
+      ${row("RTN", pedido.rtn)}
+      ${row("número de cliente", numeroCliente)}
+    </table>
+  </div></body></html>`;
+  return { subject, text, html };
 }
 
 function buildPedidoEmail(pedido) {
@@ -568,6 +621,64 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
 });
 
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
+
+
+app.post("/webhooks/cancelar-pedido", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const pedido = extractPedido(req);
+  console.log("[cancel-pedido] inbound meta", {
+    bodyKeys: pedido._bodyKeys,
+    xCallerNumberPresent: pedido._xCallerNumberPresent,
+    callerIdSource: pedido._callerIdSource || "(none)",
+  });
+  console.log("[cancel-pedido] inbound", {
+    nombre_cliente: pedido.nombre_cliente,
+    pedido_completo: pedido.pedido_completo,
+    total_pedido: pedido.total_pedido,
+    tipo: pedido.tipo,
+    metodo_pago: pedido.metodo_pago,
+    rtn: pedido.rtn,
+    caller_id: pedido.caller_id,
+    motivo_cancelacion: pedido.motivo_cancelacion,
+  });
+
+  const validated = validatePedido(pedido);
+  if (!validated.ok) return res.status(400).json({ ok: false, error: validated.error });
+
+  const toEmail = PEDIDO_TO_EMAIL || LEAD_TO_EMAIL;
+  if (!toEmail) {
+    return res.status(500).json({ ok: false, error: "PEDIDO_TO_EMAIL / LEAD_TO_EMAIL no configurado" });
+  }
+  if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+    return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+  }
+
+  try {
+    const transport = createTransport();
+    const { subject, text, html } = buildCancelPedidoEmail(pedido);
+    const fromName = LEAD_FROM_NAME || "Pedido Wangs";
+    const info = await transport.sendMail({
+      from: `"${fromName}" <${SMTP_USER}>`,
+      to: toEmail,
+      subject,
+      text,
+      html,
+    });
+    console.log(`[cancel-pedido] enviado a ${toEmail} id=${info.messageId}`);
+    return res.json({
+      ok: true,
+      message: "Cancelación enviada",
+      messageId: info.messageId,
+      to: toEmail,
+      caller_id: pedido.caller_id || "No disponible",
+    });
+  } catch (err) {
+    console.error("[cancel-pedido] SMTP", err?.message || err);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+  }
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`genio-lead-webhook on :${PORT}`);
