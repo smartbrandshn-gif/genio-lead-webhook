@@ -620,9 +620,6 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
   }
 });
 
-app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
-
-
 app.post("/webhooks/cancelar-pedido", async (req, res) => {
   const auth = checkSecret(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
@@ -679,6 +676,9 @@ app.post("/webhooks/cancelar-pedido", async (req, res) => {
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
   }
 });
+
+app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
+
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`genio-lead-webhook on :${PORT}`);
