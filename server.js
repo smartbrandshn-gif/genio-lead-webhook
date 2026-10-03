@@ -172,31 +172,6 @@ function buildEmail(lead) {
   return { subject, text, html };
 }
 
-function normalizeTipo(raw) {
-  const s = String(raw || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  if (!s) return "";
-  if (
-    /\b(recoger|llevar|pickup|para\s+llevar|take\s*away|takeaway|to\s*go)\b/.test(s) ||
-    s === "recoger" ||
-    s === "para llevar"
-  ) {
-    return "recoger";
-  }
-  if (
-    /\b(comer|restaurante|local|dine\s*in|dine-in|aqui|aquí|mesa|en\s+el\s+local|comer\s+en)\b/.test(s) ||
-    /comer\s+en\s+(el\s+)?restaurante/.test(s) ||
-    s === "dine in" ||
-    s === "en el local"
-  ) {
-    return "comer en el restaurante";
-  }
-  return "";
-}
-
 function normalizePago(raw) {
   const s = String(raw || "")
     .trim()
@@ -285,7 +260,6 @@ function extractPedido(req) {
   // Optional: empty / omit / "sin notas" → treat as empty
   if (!notas || /sin\s+notas/i.test(notas) || looksFake(notas)) notas = "";
   const total_pedido = pick(merged, ["total_pedido", "total", "total_del_pedido"]);
-  const tipoRaw = pick(merged, ["tipo", "modalidad", "tipo_pedido", "para"]);
   const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
   const rtnRaw = pick(merged, ["rtn", "RTN", "factura_rtn"]);
   const motivoRaw = pick(merged, ["motivo_cancelacion", "motivo", "razon_cancelacion", "reason"]);
@@ -295,12 +269,10 @@ function extractPedido(req) {
     pedido_completo,
     notas,
     total_pedido,
-    tipo: normalizeTipo(tipoRaw),
     metodo_pago: normalizePago(pagoRaw),
     rtn: normalizeRtn(rtnRaw),
     motivo_cancelacion: motivoRaw && !looksFake(motivoRaw) ? String(motivoRaw).trim() : "",
     caller_id: phone.caller_id,
-    _tipoRaw: tipoRaw,
     _pagoRaw: pagoRaw,
     _rtnRaw: rtnRaw,
     _callerIdRaw: phone._callerIdRaw,
@@ -321,12 +293,6 @@ function validatePedido(pedido) {
   }
   if (!pedido.total_pedido || looksFake(pedido.total_pedido)) {
     return { ok: false, error: "total_pedido es requerido" };
-  }
-  if (!pedido.tipo) {
-    return {
-      ok: false,
-      error: 'tipo debe ser "recoger" o "comer en restaurante" (se aceptan variantes como para llevar, pickup, dine in)',
-    };
   }
   if (!pedido.metodo_pago) {
     return { ok: false, error: 'metodo_pago debe ser "Efectivo" o "Tarjeta"' };
@@ -383,7 +349,7 @@ function formatPedidoCompleto(raw) {
 
 function buildCancelPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
-  const subject = `[CANCELADO Wangs] ${pedido.nombre_cliente} — ${pedido.tipo} — ${pedido.total_pedido}`;
+  const subject = `[CANCELADO Wangs] ${pedido.nombre_cliente} — ${pedido.total_pedido}`;
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
   const numeroCliente = pedido.caller_id || "no";
   const motivo = pedido.motivo_cancelacion || "El cliente canceló el pedido en la llamada";
@@ -398,7 +364,6 @@ function buildCancelPedidoEmail(pedido) {
     pedidoBody,
     `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
     `Total: ${pedido.total_pedido}`,
-    `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
     `número de cliente: ${numeroCliente}`,
@@ -422,7 +387,6 @@ function buildCancelPedidoEmail(pedido) {
     <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
       ${row("Notas / solicitudes", pedido.notas || "(ninguna)")}
       ${row("Total", pedido.total_pedido)}
-      ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
       ${row("RTN", pedido.rtn)}
       ${row("número de cliente", numeroCliente)}
@@ -433,7 +397,7 @@ function buildCancelPedidoEmail(pedido) {
 
 function buildPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
-  const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.tipo} — ${pedido.total_pedido}`;
+  const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.total_pedido}`;
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
   const numeroCliente = pedido.caller_id || "no";
   const text = [
@@ -445,7 +409,6 @@ function buildPedidoEmail(pedido) {
     pedidoBody,
     `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
     `Total: ${pedido.total_pedido}`,
-    `Tipo: ${pedido.tipo}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
     `número de cliente: ${numeroCliente}`,
@@ -476,7 +439,6 @@ function buildPedidoEmail(pedido) {
     <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
       ${row("Notas / solicitudes", pedido.notas || "(ninguna)")}
       ${row("Total", pedido.total_pedido)}
-      ${row("Tipo", pedido.tipo)}
       ${row("Método de pago", pedido.metodo_pago)}
       ${row("RTN", pedido.rtn)}
       ${row("número de cliente", numeroCliente)}
@@ -570,11 +532,9 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
     pedido_completo: pedido.pedido_completo,
     notas: pedido.notas,
     total_pedido: pedido.total_pedido,
-    tipo: pedido.tipo,
     metodo_pago: pedido.metodo_pago,
     rtn: pedido.rtn,
     caller_id: pedido.caller_id,
-    _tipoRaw: pedido._tipoRaw,
     _pagoRaw: pedido._pagoRaw,
     _rtnRaw: pedido._rtnRaw,
     _callerIdRaw: pedido._callerIdRaw,
@@ -609,7 +569,6 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
       message: "Pedido enviado",
       messageId: info.messageId,
       to: toEmail,
-      tipo: pedido.tipo,
       metodo_pago: pedido.metodo_pago,
       rtn: pedido.rtn,
       caller_id: pedido.caller_id || "No disponible",
@@ -634,7 +593,6 @@ app.post("/webhooks/cancelar-pedido", async (req, res) => {
     nombre_cliente: pedido.nombre_cliente,
     pedido_completo: pedido.pedido_completo,
     total_pedido: pedido.total_pedido,
-    tipo: pedido.tipo,
     metodo_pago: pedido.metodo_pago,
     rtn: pedido.rtn,
     caller_id: pedido.caller_id,
