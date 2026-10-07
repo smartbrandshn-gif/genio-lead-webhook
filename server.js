@@ -10,6 +10,9 @@ const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_APP_PASSWORD = process.env.SMTP_APP_PASSWORD || "";
 const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "";
 const PEDIDO_TO_EMAIL = process.env.PEDIDO_TO_EMAIL || "";
+// Mexcali (2do restaurante): destino propio; fallback en código para no depender de Render env
+const MEXCALI_PEDIDO_TO_EMAIL = process.env.MEXCALI_PEDIDO_TO_EMAIL || "sarmientod6@gmail.com";
+const MEXCALI_FROM_NAME = "Pedido Mexcali";
 const LEAD_FROM_NAME = process.env.LEAD_FROM_NAME || "Genio Demo";
 const CLIENT_LABEL = process.env.CLIENT_LABEL || "Genio Demo";
 
@@ -447,6 +450,114 @@ function buildPedidoEmail(pedido) {
   return { subject, text, html };
 }
 
+/* ---------- Restaurantes adicionales (Mexcali, …) ----------
+ * Builders parametrizados por nombre de negocio. Mismo formato que Wangs
+ * (los builders/rutas de Wangs arriba y abajo NO se tocan).
+ */
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function htmlRow(l, v) {
+  return `<tr><td style="padding:6px 12px;font-weight:600;vertical-align:top">${escHtml(l)}</td><td style="padding:6px 12px">${escHtml(v)}</td></tr>`;
+}
+
+function buildPedidoEmailFor(business, pedido) {
+  const ts = guatemalaTimestamp();
+  const subject = `[Pedido ${business}] ${pedido.nombre_cliente} — ${pedido.total_pedido}`;
+  const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
+  const numeroCliente = pedido.caller_id || "no";
+  const text = [
+    `Nuevo pedido — ${business}`,
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    `Cliente: ${pedido.nombre_cliente}`,
+    "Pedido:",
+    pedidoBody,
+    `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
+    `Total: ${pedido.total_pedido}`,
+    `Método de pago: ${pedido.metodo_pago}`,
+    `RTN: ${pedido.rtn}`,
+    `número de cliente: ${numeroCliente}`,
+  ].join("\n");
+  const pedidoHtml = `<div style="padding:4px 20px 12px">
+      <div style="font-weight:600;margin:0 0 8px;font-size:14px">Pedido</div>
+      <pre style="margin:0;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;white-space:pre-line;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace,system-ui;font-size:14px;line-height:1.45;color:#1c1917">${escHtml(pedidoBody)}</pre>
+    </div>`;
+  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+    <div style="background:#b45309;color:#fff;padding:16px 20px">
+      <h1 style="margin:0;font-size:18px">Pedido — ${escHtml(business)}</h1>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">Genio · notificaciones</p>
+    </div>
+    <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${escHtml(ts)}</p>
+    <table style="width:100%;border-collapse:collapse;margin:8px 0 0">
+      ${htmlRow("Cliente", pedido.nombre_cliente)}
+    </table>
+    ${pedidoHtml}
+    <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
+      ${htmlRow("Notas / solicitudes", pedido.notas || "(ninguna)")}
+      ${htmlRow("Total", pedido.total_pedido)}
+      ${htmlRow("Método de pago", pedido.metodo_pago)}
+      ${htmlRow("RTN", pedido.rtn)}
+      ${htmlRow("número de cliente", numeroCliente)}
+    </table>
+  </div></body></html>`;
+  return { subject, text, html };
+}
+
+function buildCancelPedidoEmailFor(business, pedido) {
+  const ts = guatemalaTimestamp();
+  const subject = `[CANCELADO ${business}] ${pedido.nombre_cliente} — ${pedido.total_pedido}`;
+  const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
+  const numeroCliente = pedido.caller_id || "no";
+  const motivo = pedido.motivo_cancelacion || "El cliente canceló el pedido en la llamada";
+  const text = [
+    `PEDIDO CANCELADO — ${business}`,
+    "NO PREPARAR / NO ENTREGAR",
+    `Hora: ${ts}`,
+    `Motivo: ${motivo}`,
+    "",
+    `Cliente: ${pedido.nombre_cliente}`,
+    "Pedido (cancelado):",
+    pedidoBody,
+    `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
+    `Total: ${pedido.total_pedido}`,
+    `Método de pago: ${pedido.metodo_pago}`,
+    `RTN: ${pedido.rtn}`,
+    `número de cliente: ${numeroCliente}`,
+  ].join("\n");
+  const pedidoHtml = `<div style="padding:4px 20px 12px">
+      <div style="font-weight:600;margin:0 0 8px;font-size:14px">Pedido cancelado</div>
+      <pre style="margin:0;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;white-space:pre-line;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace,system-ui;font-size:14px;line-height:1.45;color:#1c1917">${escHtml(pedidoBody)}</pre>
+    </div>`;
+  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+    <div style="background:#b91c1c;color:#fff;padding:16px 20px">
+      <h1 style="margin:0;font-size:18px">PEDIDO CANCELADO — ${escHtml(business)}</h1>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">NO PREPARAR · Genio</p>
+    </div>
+    <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${escHtml(ts)}</p>
+    <table style="width:100%;border-collapse:collapse;margin:8px 0 0">
+      ${htmlRow("Motivo", motivo)}
+      ${htmlRow("Cliente", pedido.nombre_cliente)}
+    </table>
+    ${pedidoHtml}
+    <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
+      ${htmlRow("Notas / solicitudes", pedido.notas || "(ninguna)")}
+      ${htmlRow("Total", pedido.total_pedido)}
+      ${htmlRow("Método de pago", pedido.metodo_pago)}
+      ${htmlRow("RTN", pedido.rtn)}
+      ${htmlRow("número de cliente", numeroCliente)}
+    </table>
+  </div></body></html>`;
+  return { subject, text, html };
+}
+
 function createTransport() {
   return nodemailer.createTransport({
     host: SMTP_HOST,
@@ -464,6 +575,7 @@ app.get("/health", (_req, res) => {
     time: guatemalaTimestamp(),
     smtpConfigured: Boolean(SMTP_USER && SMTP_APP_PASSWORD && LEAD_TO_EMAIL),
     pedidoToConfigured: Boolean(PEDIDO_TO_EMAIL || LEAD_TO_EMAIL),
+    mexcaliPedidoToConfigured: Boolean(MEXCALI_PEDIDO_TO_EMAIL),
     secretConfigured: Boolean(LEAD_WEBHOOK_SECRET),
   });
 });
@@ -633,6 +745,139 @@ app.post("/webhooks/cancelar-pedido", async (req, res) => {
     console.error("[cancel-pedido] SMTP", err?.message || err);
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
   }
+});
+
+/**
+ * Rutas de pedido/cancelación para un restaurante adicional.
+ * Mismo payload, validación, secreto y manejo de número que Wangs.
+ * IMPORTANTE: registrar ANTES del handler 404.
+ */
+function registerRestaurantPedidoRoutes({ slug, business, toEmail, fromName }) {
+  const tag = `[${slug}-pedido]`;
+  const cancelTag = `[${slug}-cancel-pedido]`;
+
+  app.post(`/webhooks/${slug}/enviar-pedido`, async (req, res) => {
+    const auth = checkSecret(req);
+    if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+    const pedido = extractPedido(req);
+    console.log(`${tag} inbound meta`, {
+      bodyKeys: pedido._bodyKeys,
+      xCallerNumberPresent: pedido._xCallerNumberPresent,
+      callerIdSource: pedido._callerIdSource || "(none)",
+      callerIdDestTestPresent: pedido._callerIdDestTestPresent,
+      callerIdDestTest: pedido._callerIdDestTestForLog,
+    });
+    console.log(`${tag} inbound`, {
+      nombre_cliente: pedido.nombre_cliente,
+      pedido_completo: pedido.pedido_completo,
+      notas: pedido.notas,
+      total_pedido: pedido.total_pedido,
+      metodo_pago: pedido.metodo_pago,
+      rtn: pedido.rtn,
+      caller_id: pedido.caller_id,
+      _pagoRaw: pedido._pagoRaw,
+      _rtnRaw: pedido._rtnRaw,
+      _callerIdRaw: pedido._callerIdRaw,
+      _callerIdSource: pedido._callerIdSource,
+    });
+
+    const validated = validatePedido(pedido);
+    if (!validated.ok) return res.status(400).json({ ok: false, error: validated.error });
+
+    if (!toEmail) {
+      return res.status(500).json({ ok: false, error: `Destino de pedidos ${business} no configurado` });
+    }
+    if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+      return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+    }
+
+    try {
+      const transport = createTransport();
+      const { subject, text, html } = buildPedidoEmailFor(business, pedido);
+      const info = await transport.sendMail({
+        from: `"${fromName}" <${SMTP_USER}>`,
+        to: toEmail,
+        subject,
+        text,
+        html,
+      });
+      console.log(`${tag} enviado a ${toEmail} id=${info.messageId}`);
+      return res.json({
+        ok: true,
+        message: "Pedido enviado",
+        messageId: info.messageId,
+        to: toEmail,
+        metodo_pago: pedido.metodo_pago,
+        rtn: pedido.rtn,
+        caller_id: pedido.caller_id || "No disponible",
+      });
+    } catch (err) {
+      console.error(`${tag} SMTP`, err?.message || err);
+      return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+    }
+  });
+
+  app.post(`/webhooks/${slug}/cancelar-pedido`, async (req, res) => {
+    const auth = checkSecret(req);
+    if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+    const pedido = extractPedido(req);
+    console.log(`${cancelTag} inbound meta`, {
+      bodyKeys: pedido._bodyKeys,
+      xCallerNumberPresent: pedido._xCallerNumberPresent,
+      callerIdSource: pedido._callerIdSource || "(none)",
+    });
+    console.log(`${cancelTag} inbound`, {
+      nombre_cliente: pedido.nombre_cliente,
+      pedido_completo: pedido.pedido_completo,
+      total_pedido: pedido.total_pedido,
+      metodo_pago: pedido.metodo_pago,
+      rtn: pedido.rtn,
+      caller_id: pedido.caller_id,
+      motivo_cancelacion: pedido.motivo_cancelacion,
+    });
+
+    const validated = validatePedido(pedido);
+    if (!validated.ok) return res.status(400).json({ ok: false, error: validated.error });
+
+    if (!toEmail) {
+      return res.status(500).json({ ok: false, error: `Destino de pedidos ${business} no configurado` });
+    }
+    if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+      return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+    }
+
+    try {
+      const transport = createTransport();
+      const { subject, text, html } = buildCancelPedidoEmailFor(business, pedido);
+      const info = await transport.sendMail({
+        from: `"${fromName}" <${SMTP_USER}>`,
+        to: toEmail,
+        subject,
+        text,
+        html,
+      });
+      console.log(`${cancelTag} enviado a ${toEmail} id=${info.messageId}`);
+      return res.json({
+        ok: true,
+        message: "Cancelación enviada",
+        messageId: info.messageId,
+        to: toEmail,
+        caller_id: pedido.caller_id || "No disponible",
+      });
+    } catch (err) {
+      console.error(`${cancelTag} SMTP`, err?.message || err);
+      return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+    }
+  });
+}
+
+registerRestaurantPedidoRoutes({
+  slug: "mexcali",
+  business: "Mexcali",
+  toEmail: MEXCALI_PEDIDO_TO_EMAIL,
+  fromName: MEXCALI_FROM_NAME,
 });
 
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
