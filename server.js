@@ -351,6 +351,9 @@ function formatPedidoCompleto(raw) {
 
 
 function buildCancelPedidoEmail(pedido) {
+  // esc/row no existían en este scope ("esc is not defined" → 502); usar helpers compartidos
+  const esc = escHtml;
+  const row = htmlRow;
   const ts = guatemalaTimestamp();
   const subject = `[CANCELADO Wangs] ${pedido.nombre_cliente} — ${pedido.total_pedido}`;
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
