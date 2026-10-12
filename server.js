@@ -11,6 +11,7 @@ const SMTP_APP_PASSWORD = process.env.SMTP_APP_PASSWORD || "";
 const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "";
 // Genio Demo (sales demo agent): destino propio, no afecta LEAD_TO_EMAIL de otros clientes
 const DEMO_LEAD_TO_EMAIL = process.env.DEMO_LEAD_TO_EMAIL || "smartbrandshn@gmail.com";
+const DEMO_FROM_EMAIL = "genionotificaciones@gmail.com";
 const PEDIDO_TO_EMAIL = process.env.PEDIDO_TO_EMAIL || "";
 // Mexcali (2do restaurante): destino propio; fallback en código para no depender de Render env
 const MEXCALI_PEDIDO_TO_EMAIL = process.env.MEXCALI_PEDIDO_TO_EMAIL || "sarmientod6@gmail.com";
@@ -631,7 +632,7 @@ async function handleLead(req, res) {
     const { subject, text, html } = buildEmail(lead);
     const leadTo = lead.negocio ? DEMO_LEAD_TO_EMAIL : LEAD_TO_EMAIL;
     const info = await transport.sendMail({
-      from: `"${lead.negocio ? "Genio Demo" : LEAD_FROM_NAME}" <${SMTP_USER}>`,
+      from: lead.negocio ? `"Genio Demo" <${DEMO_FROM_EMAIL}>` : `"${LEAD_FROM_NAME}" <${SMTP_USER}>`,
       to: leadTo,
       subject,
       text,
