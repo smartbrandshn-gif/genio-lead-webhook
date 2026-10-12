@@ -9,6 +9,8 @@ const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_APP_PASSWORD = process.env.SMTP_APP_PASSWORD || "";
 const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "";
+// Genio Demo (sales demo agent): destino propio, no afecta LEAD_TO_EMAIL de otros clientes
+const DEMO_LEAD_TO_EMAIL = process.env.DEMO_LEAD_TO_EMAIL || "smartbrandshn@gmail.com";
 const PEDIDO_TO_EMAIL = process.env.PEDIDO_TO_EMAIL || "";
 // Mexcali (2do restaurante): destino propio; fallback en código para no depender de Render env
 const MEXCALI_PEDIDO_TO_EMAIL = process.env.MEXCALI_PEDIDO_TO_EMAIL || "sarmientod6@gmail.com";
@@ -95,6 +97,8 @@ function extractLead(req) {
   if (canal === "llamada" || canal === "phone") canal = "telefono";
   if (canal === "wa") canal = "whatsapp";
   const notas = pick(merged, ["notas", "notes", "summary"]);
+  const negocio = pick(merged, ["negocio", "empresa", "business"]);
+  const plan_interes = pick(merged, ["plan_interes", "plan"]);
   // Same multi-source phone resolve as pedidos (body.caller_id → X-Caller-Number)
   const phone = resolveCallerPhone(req);
   return {
@@ -104,6 +108,8 @@ function extractLead(req) {
     horario_contacto: horario,
     canal_preferido: canal,
     notas,
+    negocio,
+    plan_interes,
     caller_id: phone.caller_id,
     _callerIdSource: phone.source,
     _bodyKeys: bodyKeysForLog(req),
@@ -119,14 +125,17 @@ function validateLead(lead) {
     return { ok: false, error: "telefono real es requerido" };
   }
   if (!lead.interes || looksFake(lead.interes)) return { ok: false, error: "interes/rubro es requerido" };
-  if (!lead.horario_contacto || looksFake(lead.horario_contacto)) {
+  // Demo mode (Genio Demo sales agent): negocio present → horario/notas optional
+  const demo = Boolean(lead.negocio);
+  if (demo && looksFake(lead.negocio)) return { ok: false, error: "negocio real es requerido" };
+  if (!demo && (!lead.horario_contacto || looksFake(lead.horario_contacto))) {
     return { ok: false, error: "horario_contacto real es requerido" };
   }
   if (lead.canal_preferido && !CANALES.has(lead.canal_preferido)) {
     return { ok: false, error: "canal_preferido debe ser whatsapp|telefono|email" };
   }
   if (!lead.canal_preferido) lead.canal_preferido = "telefono";
-  if (!lead.notas || looksFake(lead.notas) || /sin\s+notas/i.test(lead.notas)) {
+  if (!demo && (!lead.notas || looksFake(lead.notas) || /sin\s+notas/i.test(lead.notas))) {
     return { ok: false, error: "notas reales son requeridas" };
   }
   return { ok: true };
@@ -134,15 +143,19 @@ function validateLead(lead) {
 
 function buildEmail(lead) {
   const ts = guatemalaTimestamp();
-  const subject = `[Lead ${CLIENT_LABEL}] ${lead.interes} — ${lead.nombre}`;
+  const subject = lead.negocio
+    ? `[Lead Genio Demo] ${lead.negocio} (${lead.interes}) — ${lead.nombre}${lead.plan_interes ? ` — ${lead.plan_interes}` : ""}`
+    : `[Lead ${CLIENT_LABEL}] ${lead.interes} — ${lead.nombre}`;
   const text = [
     `Nuevo lead — ${CLIENT_LABEL}`,
     "",
     `Fecha (America/Guatemala): ${ts}`,
     `Nombre: ${lead.nombre}`,
+    ...(lead.negocio ? [`Negocio: ${lead.negocio}`] : []),
+    ...(lead.plan_interes ? [`Plan de interés: ${lead.plan_interes}`] : []),
     `Teléfono / WhatsApp: ${lead.telefono_whatsapp}`,
     `Interés / rubro: ${lead.interes}`,
-    `Horario: ${lead.horario_contacto}`,
+    `Horario: ${lead.horario_contacto || "(n/a)"}`,
     `Canal: ${lead.canal_preferido}`,
     `Notas: ${lead.notas || "(sin notas)"}`,
     `Número de cliente: ${lead.caller_id || "(n/a)"}`,
@@ -164,9 +177,11 @@ function buildEmail(lead) {
     <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${esc(ts)}</p>
     <table style="width:100%;border-collapse:collapse;margin:8px 0 16px">
       ${row("Nombre", lead.nombre)}
+      ${lead.negocio ? row("Negocio", lead.negocio) : ""}
+      ${lead.plan_interes ? row("Plan de interés", lead.plan_interes) : ""}
       ${row("Teléfono / WhatsApp", lead.telefono_whatsapp)}
       ${row("Interés / rubro", lead.interes)}
-      ${row("Horario", lead.horario_contacto)}
+      ${row("Horario", lead.horario_contacto || "(n/a)")}
       ${row("Canal", lead.canal_preferido)}
       ${row("Notas", lead.notas || "(sin notas)")}
       ${row("Número de cliente", lead.caller_id || "(n/a)")}
@@ -583,7 +598,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.post("/webhooks/enviar-lead", async (req, res) => {
+async function handleLead(req, res) {
   const auth = checkSecret(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
 
@@ -614,20 +629,23 @@ app.post("/webhooks/enviar-lead", async (req, res) => {
   try {
     const transport = createTransport();
     const { subject, text, html } = buildEmail(lead);
+    const leadTo = lead.negocio ? DEMO_LEAD_TO_EMAIL : LEAD_TO_EMAIL;
     const info = await transport.sendMail({
-      from: `"${LEAD_FROM_NAME}" <${SMTP_USER}>`,
-      to: LEAD_TO_EMAIL,
+      from: `"${lead.negocio ? "Genio Demo" : LEAD_FROM_NAME}" <${SMTP_USER}>`,
+      to: leadTo,
       subject,
       text,
       html,
     });
-    console.log(`[lead] enviado a ${LEAD_TO_EMAIL} id=${info.messageId}`);
+    console.log(`[lead] enviado a ${leadTo} id=${info.messageId}`);
     return res.json({ ok: true, message: "Lead enviado", messageId: info.messageId });
   } catch (err) {
     console.error("[lead] SMTP", err?.message || err);
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
   }
-});
+}
+app.post("/webhooks/enviar-lead", handleLead);
+app.post("/webhooks/lead", handleLead);
 
 app.post("/webhooks/enviar-pedido", async (req, res) => {
   const auth = checkSecret(req);
