@@ -1061,8 +1061,8 @@ function buildRossoEmail(p) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-collapse:separate;border:1px solid #e5e7eb;border-radius:10px">
   <tr><td style="background:#166534;padding:22px 24px;border-radius:10px 10px 0 0">
-    <div style="${F}font-size:20px;font-weight:bold;color:#ffffff">${escHtml(title)} — Rosso Napoletano</div>
-    <div style="${F}font-size:13px;color:#bbf7d0;padding-top:6px">Sucursal ${escHtml(p.sucursal)} · ${escHtml(ts)}</div>
+    <div style="${F}font-size:20px;font-weight:bold;color:#ffffff">Rosso Napoletano</div>
+    <div style="${F}font-size:13px;color:#bbf7d0;padding-top:6px">${escHtml(hasPedido && hasReserva ? "Pedido y reserva" : hasPedido ? "Pedido" : "Reserva")} · Sucursal ${escHtml(p.sucursal)} · ${escHtml(rossoHeaderDate())}</div>
   </td></tr>
   <tr><td style="height:20px;line-height:20px;font-size:0">&nbsp;</td></tr>
   ${cards.join("\n  ")}
@@ -1077,6 +1077,13 @@ function rossoSplitItems(raw) {
     .map((s) => normalizePedidoQtyWords(s.trim().replace(/^[-•*]\s*/, "")))
     .filter(Boolean);
   return out.length ? out : [String(raw || "")];
+}
+
+function rossoHeaderDate(d = new Date()) {
+  const tz = "America/Guatemala";
+  const day = new Intl.DateTimeFormat("es", { timeZone: tz, weekday: "long", day: "numeric", month: "long" }).format(d).replace(",", "");
+  const time = new Intl.DateTimeFormat("es", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(d).replace(/\u00a0|\u202f/g, " ");
+  return `${day}, ${time}`;
 }
 
 app.post("/webhooks/pedido-rosso", async (req, res) => {
