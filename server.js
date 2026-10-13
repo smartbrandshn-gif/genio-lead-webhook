@@ -902,6 +902,175 @@ registerRestaurantPedidoRoutes({
   fromName: MEXCALI_FROM_NAME,
 });
 
+/* ---------- Rosso Napoletano (2 sucursales: Foresta / Proceres) ----------
+ * Ruta independiente: pedidos y/o reservas. No modifica rutas existentes.
+ */
+const ROSSO_FORESTA_TO_EMAIL = process.env.ROSSO_FORESTA_TO_EMAIL || "sarmientod6@gmail.com";
+const ROSSO_PROCERES_TO_EMAIL = process.env.ROSSO_PROCERES_TO_EMAIL || "sarmientod6@gmail.com";
+const ROSSO_FROM = `"Rosso Napoletano Pedidos" <genionotificaciones@gmail.com>`;
+
+function rossoNorm(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+function rossoSucursal(raw) {
+  const s = rossoNorm(raw);
+  if (s.includes("foresta")) return "Foresta";
+  if (s.includes("procer")) return "Proceres";
+  return "";
+}
+function rossoBool(raw) {
+  if (typeof raw === "boolean") return raw;
+  const s = rossoNorm(raw);
+  if (["true", "si", "s", "yes", "1", "sí"].includes(s)) return true;
+  if (["false", "no", "n", "0"].includes(s)) return false;
+  return null;
+}
+function rossoTipo(raw) {
+  const s = rossoNorm(raw);
+  if (!s) return "pedido";
+  if (s.includes("ambos") || (s.includes("pedido") && s.includes("reserva"))) return "ambos";
+  if (s.includes("reserva")) return "reserva";
+  if (s.includes("pedido")) return "pedido";
+  return "";
+}
+function rossoTipoPedido(raw) {
+  const s = rossoNorm(raw);
+  if (s.includes("recog") || s.includes("llevar")) return "Para recoger";
+  if (s.includes("comer") || s.includes("restaurante") || s.includes("mesa") || s.includes("aqui")) return "Comer en el restaurante";
+  return "";
+}
+function rossoTelefono(raw) {
+  let d = String(raw || "").replace(/\D/g, "");
+  if (d.length === 11 && d.startsWith("504")) d = d.slice(3);
+  return /^\d{8}$/.test(d) ? d : "";
+}
+function rossoTotal(raw) {
+  const s = String(raw ?? "").replace(/lempiras?|lps?\.?|\bL\b|,/gi, "").trim();
+  const n = Number(s);
+  return s && Number.isFinite(n) && n >= 0 ? n : null;
+}
+function rossoMoney(n) {
+  return `${Number.isInteger(n) ? n : n.toFixed(2)} lempiras`;
+}
+
+function extractRosso(req) {
+  const m = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  const raw = (k) => (m[k] == null ? "" : typeof m[k] === "boolean" ? m[k] : String(m[k]).trim());
+  return {
+    tipo: rossoTipo(raw("tipo")),
+    _tipoRaw: raw("tipo"),
+    sucursal: rossoSucursal(raw("sucursal")),
+    nombre: String(raw("nombre")),
+    telefono: rossoTelefono(raw("telefono")),
+    tipo_pedido: rossoTipoPedido(raw("tipo_pedido")),
+    pedido: String(raw("pedido")),
+    total: rossoTotal(raw("total")),
+    necesita_rtn: rossoBool(raw("necesita_rtn")),
+    rtn_numero: String(raw("rtn_numero")),
+    rtn_nombre: String(raw("rtn_nombre")),
+    notas: String(raw("notas")),
+    reserva_nombre: String(raw("reserva_nombre")),
+    reserva_personas: (() => { const n = parseInt(String(raw("reserva_personas")).replace(/\D/g, ""), 10); return n > 0 ? n : null; })(),
+    reserva_fecha: String(raw("reserva_fecha")),
+    reserva_hora: String(raw("reserva_hora")),
+  };
+}
+
+function validateRosso(p) {
+  if (!p.tipo) return "tipo inválido: usa 'pedido', 'reserva' o 'ambos'";
+  if (!p.sucursal) return "sucursal es requerida: 'Foresta' o 'Proceres'";
+  if (!p.nombre || looksFake(p.nombre)) return "nombre es requerido";
+  if (!p.telefono) return "telefono es requerido: 8 dígitos sin 504";
+  if (p.tipo !== "reserva") {
+    if (!p.tipo_pedido) return "tipo_pedido es requerido: 'recoger' o 'comer en el restaurante'";
+    if (!p.pedido || looksFake(p.pedido)) return "pedido es requerido";
+    if (p.total == null) return "total es requerido (número en lempiras)";
+    if (p.necesita_rtn == null) return "necesita_rtn es requerido (true/false)";
+    if (p.necesita_rtn && (!p.rtn_numero || !p.rtn_nombre)) return "rtn_numero y rtn_nombre son requeridos cuando necesita_rtn es true";
+  }
+  if (p.tipo !== "pedido") {
+    if (!p.reserva_nombre || looksFake(p.reserva_nombre)) return "reserva_nombre es requerido";
+    if (!p.reserva_personas) return "reserva_personas es requerido (número)";
+    if (!p.reserva_fecha) return "reserva_fecha es requerida";
+    if (!p.reserva_hora) return "reserva_hora es requerida";
+  }
+  return "";
+}
+
+function buildRossoEmail(p) {
+  const ts = guatemalaTimestamp();
+  const hasPedido = p.tipo !== "reserva";
+  const hasReserva = p.tipo !== "pedido";
+  const subject = hasPedido
+    ? `[Pedido Rosso ${p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
+    : `[Reserva Rosso ${p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`;
+  const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
+  const pedidoBody = hasPedido ? formatPedidoCompleto(p.pedido) : "";
+  const lines = [
+    `${title} — Rosso Napoletano (${p.sucursal})`,
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    `Sucursal: ${p.sucursal}`,
+    `Cliente: ${p.nombre}`,
+    `Teléfono: ${p.telefono}`,
+  ];
+  const rows = [["Sucursal", p.sucursal], ["Cliente", p.nombre], ["Teléfono", p.telefono]];
+  const pedRows = [];
+  if (hasPedido) {
+    lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, `Total: ${rossoMoney(p.total)}`);
+    pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", rossoMoney(p.total)]);
+    if (p.necesita_rtn) {
+      lines.push(`Factura con RTN: Sí`, `RTN número: ${p.rtn_numero}`, `RTN a nombre de: ${p.rtn_nombre}`);
+      pedRows.push(["Factura con RTN", "Sí"], ["RTN número", p.rtn_numero], ["RTN a nombre de", p.rtn_nombre]);
+    } else {
+      lines.push("Factura con RTN: No");
+      pedRows.push(["Factura con RTN", "No"]);
+    }
+  }
+  const resRows = [];
+  if (hasReserva) {
+    lines.push("", "RESERVA DE MESA", `A nombre de: ${p.reserva_nombre}`, `Personas: ${p.reserva_personas}`, `Fecha: ${p.reserva_fecha}`, `Hora: ${p.reserva_hora}`);
+    resRows.push(["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Fecha", p.reserva_fecha], ["Hora", p.reserva_hora]);
+  }
+  lines.push("", `Notas: ${p.notas || "(ninguna)"}`);
+  const section = (t, r) => `<h2 style="margin:16px 20px 4px;font-size:15px;color:#991b1b">${escHtml(t)}</h2>
+    <table style="width:100%;border-collapse:collapse">${r.map(([a, b]) => htmlRow(a, b)).join("")}</table>`;
+  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;padding-bottom:16px">
+    <div style="background:#991b1b;color:#fff;padding:16px 20px">
+      <h1 style="margin:0;font-size:18px">${escHtml(title)} — Rosso Napoletano</h1>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">Sucursal ${escHtml(p.sucursal)} · Genio</p>
+    </div>
+    <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${escHtml(ts)}</p>
+    <table style="width:100%;border-collapse:collapse">${rows.map(([a, b]) => htmlRow(a, b)).join("")}</table>
+    ${hasPedido ? section("Pedido", pedRows) + `<div style="padding:8px 20px"><pre style="margin:0;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;white-space:pre-line;font-family:ui-monospace,monospace;font-size:14px">${escHtml(pedidoBody)}</pre></div>` : ""}
+    ${hasReserva ? section("Reserva de mesa", resRows) : ""}
+    ${section("Notas", [["Notas", p.notas || "(ninguna)"]])}
+  </div></body></html>`;
+  return { subject, text: lines.join("\n"), html };
+}
+
+app.post("/webhooks/pedido-rosso", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+  const p = extractRosso(req);
+  console.log("[rosso] inbound", p);
+  const err = validateRosso(p);
+  if (err) return res.status(400).json({ ok: false, error: err });
+  const toEmail = p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
+  if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+  const email = buildRossoEmail(p);
+  if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
+  try {
+    const info = await createTransport().sendMail({ from: ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
+    console.log(`[rosso] enviado a ${toEmail} id=${info.messageId}`);
+    return res.json({ ok: true, message: p.tipo === "reserva" ? "Reserva enviada" : "Pedido enviado", tipo: p.tipo, sucursal: p.sucursal, messageId: info.messageId, to: toEmail });
+  } catch (e) {
+    console.error("[rosso] SMTP", e?.message || e);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: e?.message || String(e) });
+  }
+});
+
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
 
 

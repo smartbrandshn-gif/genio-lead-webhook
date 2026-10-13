@@ -28,3 +28,7 @@ Cancelar Mexcali: `POST /webhooks/mexcali/cancelar-pedido` con header `X-Lead-Se
 - Remitente: mismo SMTP (`SMTP_USER`), nombre `Pedido Mexcali`. Asuntos: `[Pedido Mexcali] <nombre> — <total>` y `[CANCELADO Mexcali] <nombre> — <total>`.
 - Mismos campos y validación que Wangs (ver arriba); cancelación acepta además `motivo_cancelacion` (opcional).
 - Las rutas Mexcali se registran con `registerRestaurantPedidoRoutes(...)` **antes** del handler 404.
+
+### Rosso Napoletano
+`POST /webhooks/pedido-rosso` (header `X-Lead-Secret`). `tipo`: `pedido` (default) | `reserva` | `ambos`. Siempre: `sucursal` (Foresta/Proceres), `nombre`, `telefono` (8 dígitos). Pedido: `tipo_pedido`, `pedido`, `total`, `necesita_rtn` (+ `rtn_numero`, `rtn_nombre` si true). Reserva: `reserva_nombre`, `reserva_personas`, `reserva_fecha`, `reserva_hora`. `notas` opcional.
+Env: `ROSSO_FORESTA_TO_EMAIL`, `ROSSO_PROCERES_TO_EMAIL` (default `sarmientod6@gmail.com`). From: `"Rosso Napoletano Pedidos" <genionotificaciones@gmail.com>`.
