@@ -161,6 +161,16 @@ function buildEmail(lead) {
     `Notas: ${lead.notas || "(sin notas)"}`,
     `Número de cliente: ${lead.caller_id || "(n/a)"}`,
   ].join("\n");
+  if (lead.negocio) {
+    const { kvTable, card } = EMAIL_UI;
+    const contacto = [["Nombre completo", lead.nombre], ["Teléfono", EMAIL_UI.fmtTel(lead.telefono_whatsapp)]];
+    const negocio = [["Nombre del negocio", lead.negocio], ["Rubro / interés", lead.interes.charAt(0).toUpperCase() + lead.interes.slice(1)]];
+    if (lead.plan_interes) negocio.push(["Plan de interés", lead.plan_interes]);
+    const cards = [card("Contacto", kvTable(contacto)), card("Negocio", kvTable(negocio))];
+    if (lead.horario_contacto) cards.push(card("Horario de contacto", kvTable([["Horario", lead.horario_contacto]])));
+    if (lead.notas) cards.push(EMAIL_UI.notasCard(lead.notas));
+    return { subject, text, html: EMAIL_UI.shell("Nuevo lead — Genio Demo", ts, cards) };
+  }
   const esc = (s) =>
     String(s)
       .replace(/&/g, "&amp;")
