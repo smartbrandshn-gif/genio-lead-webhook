@@ -1033,21 +1033,50 @@ function buildRossoEmail(p) {
     resRows.push(["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Fecha", p.reserva_fecha], ["Hora", p.reserva_hora]);
   }
   lines.push("", `Notas: ${p.notas || "(ninguna)"}`);
-  const section = (t, r) => `<h2 style="margin:16px 20px 4px;font-size:15px;color:#991b1b">${escHtml(t)}</h2>
-    <table style="width:100%;border-collapse:collapse">${r.map(([a, b]) => htmlRow(a, b)).join("")}</table>`;
-  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;padding-bottom:16px">
-    <div style="background:#991b1b;color:#fff;padding:16px 20px">
-      <h1 style="margin:0;font-size:18px">${escHtml(title)} — Rosso Napoletano</h1>
-      <p style="margin:4px 0 0;opacity:.9;font-size:13px">Sucursal ${escHtml(p.sucursal)} · Genio</p>
-    </div>
-    <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${escHtml(ts)}</p>
-    <table style="width:100%;border-collapse:collapse">${rows.map(([a, b]) => htmlRow(a, b)).join("")}</table>
-    ${hasPedido ? section("Pedido", pedRows) + `<div style="padding:8px 20px"><pre style="margin:0;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;white-space:pre-line;font-family:ui-monospace,monospace;font-size:14px">${escHtml(pedidoBody)}</pre></div>` : ""}
-    ${hasReserva ? section("Reserva de mesa", resRows) : ""}
-    ${section("Notas", [["Notas", p.notas || "(ninguna)"]])}
-  </div></body></html>`;
+  const items = rossoSplitItems(p.pedido);
+  const telFmt = p.telefono.length === 8 ? `${p.telefono.slice(0, 4)}-${p.telefono.slice(4)}` : p.telefono;
+  const F = "font-family:Arial,Helvetica,sans-serif;";
+  const kv = (l, v, last) => `<tr><td style="${F}padding:8px 0;font-size:13px;color:#6b7280;width:38%;vertical-align:top;${last ? "" : "border-bottom:1px solid #f1f1f1;"}">${escHtml(l)}</td><td style="${F}padding:8px 0;font-size:14px;color:#111827;font-weight:bold;vertical-align:top;${last ? "" : "border-bottom:1px solid #f1f1f1;"}">${escHtml(v)}</td></tr>`;
+  const kvTable = (r) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">${r.map(([a, b], i) => kv(a, b, i === r.length - 1)).join("")}</table>`;
+  const card = (t, inner) => `<tr><td style="padding:0 24px 16px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border:1px solid #e5e7eb;border-radius:8px;background:#ffffff">
+    <tr><td style="${F}padding:12px 16px 4px;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#7f1d1d">${escHtml(t)}</td></tr>
+    <tr><td style="padding:0 16px 12px">${inner}</td></tr></table></td></tr>`;
+  const itemsTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px">
+    <tr><td style="${F}padding:6px 10px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb">Detalle del pedido</td></tr>
+    ${items.map((it) => `<tr><td style="${F}padding:9px 10px;font-size:14px;color:#111827;border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`).join("")}
+    <tr><td style="padding:0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>
+      <td style="${F}padding:12px 10px;font-size:15px;font-weight:bold;color:#7f1d1d;background:#fef2f2">Total</td>
+      <td align="right" style="${F}padding:12px 10px;font-size:16px;font-weight:bold;color:#7f1d1d;background:#fef2f2;text-align:right">${escHtml(hasPedido ? rossoMoney(p.total) : "")}</td></tr></table></td></tr></table>`;
+  const cards = [card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]]))];
+  if (hasPedido) {
+    cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]]) + itemsTable));
+    const fr = [["RTN", p.necesita_rtn ? "Sí" : "No"]];
+    if (p.necesita_rtn) fr.push(["Número RTN", p.rtn_numero], ["A nombre de", p.rtn_nombre]);
+    cards.push(card("Factura", kvTable(fr)));
+  }
+  if (hasReserva) cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
+  if (p.notas) cards.push(card("Notas", `<div style="${F}font-size:14px;color:#111827;line-height:1.5;padding-top:6px">${escHtml(p.notas)}</div>`));
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-collapse:separate;border:1px solid #e5e7eb;border-radius:10px">
+  <tr><td style="background:#7f1d1d;padding:22px 24px;border-radius:10px 10px 0 0">
+    <div style="${F}font-size:20px;font-weight:bold;color:#ffffff">${escHtml(title)} — Rosso Napoletano</div>
+    <div style="${F}font-size:13px;color:#fecaca;padding-top:6px">Sucursal ${escHtml(p.sucursal)} · ${escHtml(ts)}</div>
+  </td></tr>
+  <tr><td style="height:20px;line-height:20px;font-size:0">&nbsp;</td></tr>
+  ${cards.join("\n  ")}
+  <tr><td style="${F}padding:4px 24px 20px;font-size:11px;color:#9ca3af;text-align:center">Notificación automática · Genio</td></tr>
+</table></td></tr></table></body></html>`;
   return { subject, text: lines.join("\n"), html };
+}
+
+function rossoSplitItems(raw) {
+  const out = String(raw || "")
+    .split(/\r?\n|;|,(?![^()]*\))|\s+y\s+(?=(?:\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b)/i)
+    .map((s) => normalizePedidoQtyWords(s.trim().replace(/^[-•*]\s*/, "")))
+    .filter(Boolean);
+  return out.length ? out : [String(raw || "")];
 }
 
 app.post("/webhooks/pedido-rosso", async (req, res) => {
