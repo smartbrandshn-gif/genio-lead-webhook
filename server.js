@@ -417,6 +417,38 @@ function buildCancelPedidoEmail(pedido) {
   return { subject, text, html };
 }
 
+/* ---------- Diseño de email compartido (cards, verde #166534) ---------- */
+const EMAIL_UI = (() => {
+  const F = "font-family:Arial,Helvetica,sans-serif;";
+  const ACCENT = "#166534", ACCENT_BG = "#f0fdf4", ACCENT_SUB = "#bbf7d0";
+  const kv = (l, v, last) => `<tr><td style="${F}padding:8px 0;font-size:13px;color:#6b7280;width:38%;vertical-align:top;${last ? "" : "border-bottom:1px solid #f1f1f1;"}">${escHtml(l)}</td><td style="${F}padding:8px 0;font-size:14px;color:#111827;font-weight:bold;vertical-align:top;${last ? "" : "border-bottom:1px solid #f1f1f1;"}">${escHtml(v)}</td></tr>`;
+  const kvTable = (r) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">${r.map(([a, b], i) => kv(a, b, i === r.length - 1)).join("")}</table>`;
+  const card = (t, inner) => `<tr><td style="padding:0 24px 16px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border:1px solid #e5e7eb;border-radius:8px;background:#ffffff">
+    <tr><td style="${F}padding:12px 16px 4px;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:${ACCENT}">${escHtml(t)}</td></tr>
+    <tr><td style="padding:0 16px 12px">${inner}</td></tr></table></td></tr>`;
+  const itemsTable = (items, total) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px">
+    <tr><td style="${F}padding:6px 10px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb">Detalle del pedido</td></tr>
+    ${items.map((it) => `<tr><td style="${F}padding:9px 10px;font-size:14px;color:#111827;border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`).join("")}
+    <tr><td style="padding:0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>
+      <td style="${F}padding:12px 10px;font-size:15px;font-weight:bold;color:${ACCENT};background:${ACCENT_BG}">Total</td>
+      <td align="right" style="${F}padding:12px 10px;font-size:16px;font-weight:bold;color:${ACCENT};background:${ACCENT_BG};text-align:right">${escHtml(total)}</td></tr></table></td></tr></table>`;
+  const notasCard = (notas) => card("Notas", `<div style="${F}font-size:14px;color:#111827;line-height:1.5;padding-top:6px">${escHtml(notas)}</div>`);
+  const shell = (title, subtitle, cards) => `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-collapse:separate;border:1px solid #e5e7eb;border-radius:10px">
+  <tr><td style="background:${ACCENT};padding:22px 24px;border-radius:10px 10px 0 0">
+    <div style="${F}font-size:20px;font-weight:bold;color:#ffffff">${escHtml(title)}</div>
+    <div style="${F}font-size:13px;color:${ACCENT_SUB};padding-top:6px">${escHtml(subtitle)}</div>
+  </td></tr>
+  <tr><td style="height:20px;line-height:20px;font-size:0">&nbsp;</td></tr>
+  ${cards.join("\n  ")}
+  <tr><td style="${F}padding:4px 24px 20px;font-size:11px;color:#9ca3af;text-align:center">Notificación automática · Genio</td></tr>
+</table></td></tr></table></body></html>`;
+  const fmtTel = (t) => { const d = String(t || "").replace(/\D/g, "").replace(/^504(?=\d{8}$)/, ""); return d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4)}` : String(t || ""); };
+  return { kv, kvTable, card, itemsTable, notasCard, shell, fmtTel };
+})();
+
 function buildPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
   const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.total_pedido}`;
@@ -435,37 +467,14 @@ function buildPedidoEmail(pedido) {
     `RTN: ${pedido.rtn}`,
     `número de cliente: ${numeroCliente}`,
   ].join("\n");
-  const esc = (s) =>
-    String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  const row = (l, v) =>
-    `<tr><td style="padding:6px 12px;font-weight:600;vertical-align:top">${esc(l)}</td><td style="padding:6px 12px">${esc(v)}</td></tr>`;
-  const pedidoHtml = `<div style="padding:4px 20px 12px">
-      <div style="font-weight:600;margin:0 0 8px;font-size:14px">Pedido</div>
-      <pre style="margin:0;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;white-space:pre-line;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace,system-ui;font-size:14px;line-height:1.45;color:#1c1917">${esc(pedidoBody)}</pre>
-    </div>`;
-  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:system-ui,sans-serif;background:#f8fafc;padding:24px">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
-    <div style="background:#b45309;color:#fff;padding:16px 20px">
-      <h1 style="margin:0;font-size:18px">Pedido — Wangs</h1>
-      <p style="margin:4px 0 0;opacity:.9;font-size:13px">Genio · notificaciones</p>
-    </div>
-    <p style="padding:16px 20px 0;color:#64748b;font-size:13px">${esc(ts)}</p>
-    <table style="width:100%;border-collapse:collapse;margin:8px 0 0">
-      ${row("Cliente", pedido.nombre_cliente)}
-    </table>
-    ${pedidoHtml}
-    <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
-      ${row("Notas / solicitudes", pedido.notas || "(ninguna)")}
-      ${row("Total", pedido.total_pedido)}
-      ${row("Método de pago", pedido.metodo_pago)}
-      ${row("RTN", pedido.rtn)}
-      ${row("número de cliente", numeroCliente)}
-    </table>
-  </div></body></html>`;
+  const { kvTable, card } = EMAIL_UI;
+  const cards = [
+    card("Cliente", kvTable([["Nombre", pedido.nombre_cliente], ["Teléfono", EMAIL_UI.fmtTel(numeroCliente)]])),
+    card("Pedido", kvTable([["Método de pago", pedido.metodo_pago]]) + EMAIL_UI.itemsTable(rossoSplitItems(pedidoBody), String(pedido.total_pedido))),
+    card("Factura", kvTable([["RTN", pedido.rtn]])),
+  ];
+  if (pedido.notas) cards.push(EMAIL_UI.notasCard(pedido.notas));
+  const html = EMAIL_UI.shell("Nuevo pedido — Wangs", ts, cards);
   return { subject, text, html };
 }
 
@@ -1035,18 +1044,8 @@ function buildRossoEmail(p) {
   lines.push("", `Notas: ${p.notas || "(ninguna)"}`);
   const items = rossoSplitItems(p.pedido);
   const telFmt = p.telefono.length === 8 ? `${p.telefono.slice(0, 4)}-${p.telefono.slice(4)}` : p.telefono;
-  const F = "font-family:Arial,Helvetica,sans-serif;";
-  const kv = (l, v, last) => `<tr><td style="${F}padding:8px 0;font-size:13px;color:#6b7280;width:38%;vertical-align:top;${last ? "" : "border-bottom:1px solid #f1f1f1;"}">${escHtml(l)}</td><td style="${F}padding:8px 0;font-size:14px;color:#111827;font-weight:bold;vertical-align:top;${last ? "" : "border-bottom:1px solid #f1f1f1;"}">${escHtml(v)}</td></tr>`;
-  const kvTable = (r) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">${r.map(([a, b], i) => kv(a, b, i === r.length - 1)).join("")}</table>`;
-  const card = (t, inner) => `<tr><td style="padding:0 24px 16px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border:1px solid #e5e7eb;border-radius:8px;background:#ffffff">
-    <tr><td style="${F}padding:12px 16px 4px;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#166534">${escHtml(t)}</td></tr>
-    <tr><td style="padding:0 16px 12px">${inner}</td></tr></table></td></tr>`;
-  const itemsTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px">
-    <tr><td style="${F}padding:6px 10px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb">Detalle del pedido</td></tr>
-    ${items.map((it) => `<tr><td style="${F}padding:9px 10px;font-size:14px;color:#111827;border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`).join("")}
-    <tr><td style="padding:0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>
-      <td style="${F}padding:12px 10px;font-size:15px;font-weight:bold;color:#166534;background:#f0fdf4">Total</td>
-      <td align="right" style="${F}padding:12px 10px;font-size:16px;font-weight:bold;color:#166534;background:#f0fdf4;text-align:right">${escHtml(hasPedido ? rossoMoney(p.total) : "")}</td></tr></table></td></tr></table>`;
+  const { kvTable, card } = EMAIL_UI;
+  const itemsTable = EMAIL_UI.itemsTable(items, hasPedido ? rossoMoney(p.total) : "");
   const cards = [card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]]))];
   if (hasPedido) {
     cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]]) + itemsTable));
@@ -1055,19 +1054,8 @@ function buildRossoEmail(p) {
     cards.push(card("Factura", kvTable(fr)));
   }
   if (hasReserva) cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
-  if (p.notas) cards.push(card("Notas", `<div style="${F}font-size:14px;color:#111827;line-height:1.5;padding-top:6px">${escHtml(p.notas)}</div>`));
-  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f3f4f6">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6"><tr><td align="center" style="padding:24px 12px">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-collapse:separate;border:1px solid #e5e7eb;border-radius:10px">
-  <tr><td style="background:#166534;padding:22px 24px;border-radius:10px 10px 0 0">
-    <div style="${F}font-size:20px;font-weight:bold;color:#ffffff">${escHtml(title)} — Rosso Napoletano</div>
-    <div style="${F}font-size:13px;color:#bbf7d0;padding-top:6px">Sucursal ${escHtml(p.sucursal)} · ${escHtml(ts)}</div>
-  </td></tr>
-  <tr><td style="height:20px;line-height:20px;font-size:0">&nbsp;</td></tr>
-  ${cards.join("\n  ")}
-  <tr><td style="${F}padding:4px 24px 20px;font-size:11px;color:#9ca3af;text-align:center">Notificación automática · Genio</td></tr>
-</table></td></tr></table></body></html>`;
+  if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
+  const html = EMAIL_UI.shell(`${title} — Rosso Napoletano`, `Sucursal ${p.sucursal} · ${ts}`, cards);
   return { subject, text: lines.join("\n"), html };
 }
 
