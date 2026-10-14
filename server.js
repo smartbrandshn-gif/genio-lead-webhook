@@ -985,6 +985,7 @@ function extractRosso(req) {
     pedido: String(raw("pedido")),
     total: rossoTotal(raw("total")),
     necesita_rtn: rossoBool(raw("necesita_rtn")),
+    telefono_confirmado: rossoBool(raw("telefono_confirmado")),
     rtn_numero: String(raw("rtn_numero")),
     rtn_nombre: String(raw("rtn_nombre")),
     notas: String(raw("notas")),
@@ -1000,6 +1001,7 @@ function validateRosso(p) {
   if (!p.sucursal) return "sucursal es requerida: 'Foresta' o 'Proceres'";
   if (!p.nombre || looksFake(p.nombre)) return "nombre es requerido";
   if (!p.telefono) return "telefono es requerido: 8 dígitos sin 504";
+  if (p.telefono_confirmado !== true) return "BLOQUEADO: telefono_confirmado debe ser true. Repita el teléfono al cliente en pares, espere que diga sí y vuelva a enviar con telefono_confirmado=true";
   if (p.tipo !== "reserva") {
     if (!p.tipo_pedido) return "tipo_pedido es requerido: 'recoger' o 'comer en el restaurante'";
     if (!p.pedido || looksFake(p.pedido)) return "pedido es requerido";
