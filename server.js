@@ -1060,6 +1060,7 @@ function buildRossoEmail(p) {
   const itemsTable = EMAIL_UI.itemsTable(items, hasPedido ? rossoMoney(p.total) : "");
   const cards = [card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]]))];
   if (hasPedido) {
+    cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]]) + itemsTable));
   }
   if (hasReserva) cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
   if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
