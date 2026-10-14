@@ -988,7 +988,15 @@ function extractRosso(req) {
     telefono_confirmado: rossoBool(raw("telefono_confirmado")),
     rtn_numero: String(raw("rtn_numero")),
     rtn_nombre: String(raw("rtn_nombre")),
-    notas: String(raw("notas")),
+    ...(() => {
+      let notas = String(raw("notas"));
+      let pago = String(raw("metodo_pago"));
+      const re = /(m[eé]todo de )?pago\s*:\s*(efectivo|tarjeta)\s*[.;,]?/i;
+      const mm = notas.match(re);
+      if (mm) { if (!pago) pago = mm[2]; notas = notas.replace(re, "").replace(/^[\s.;,|-]+|[\s.;,|-]+$/g, "").trim(); }
+      pago = pago ? pago.charAt(0).toUpperCase() + pago.slice(1).toLowerCase() : "";
+      return { notas, metodo_pago: pago };
+    })(),
     reserva_nombre: String(raw("reserva_nombre")),
     reserva_personas: (() => { const n = parseInt(String(raw("reserva_personas")).replace(/\D/g, ""), 10); return n > 0 ? n : null; })(),
     reserva_fecha: String(raw("reserva_fecha")),
@@ -1040,6 +1048,7 @@ function buildRossoEmail(p) {
   if (hasPedido) {
     lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, `Total: ${rossoMoney(p.total)}`);
     pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", rossoMoney(p.total)]);
+    if (p.metodo_pago) { lines.push(`Método de pago: ${p.metodo_pago}`); pedRows.push(["Método de pago", p.metodo_pago]); }
     if (p.necesita_rtn) {
       lines.push(`Factura con RTN: Sí`, `RTN número: ${p.rtn_numero}`, `RTN a nombre de: ${p.rtn_nombre}`);
       pedRows.push(["Factura con RTN", "Sí"], ["RTN número", p.rtn_numero], ["RTN a nombre de", p.rtn_nombre]);
@@ -1060,7 +1069,7 @@ function buildRossoEmail(p) {
   const itemsTable = EMAIL_UI.itemsTable(items, hasPedido ? rossoMoney(p.total) : "");
   const cards = [card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]]))];
   if (hasPedido) {
-    cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]]) + itemsTable));
+    cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]].concat(p.metodo_pago ? [["Método de pago", p.metodo_pago]] : [])) + itemsTable));
     const fr = [["RTN", p.necesita_rtn ? "Sí" : "No"]];
     if (p.necesita_rtn) fr.push(["Número RTN", p.rtn_numero], ["A nombre de", p.rtn_nombre]);
     cards.push(card("Factura", kvTable(fr)));
