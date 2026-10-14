@@ -997,7 +997,7 @@ function extractRosso(req) {
       pago = pago ? pago.charAt(0).toUpperCase() + pago.slice(1).toLowerCase() : "";
       return { notas, metodo_pago: pago };
     })(),
-    reserva_nombre: String(raw("reserva_nombre")),
+    reserva_nombre: String(raw("reserva_nombre")) || String(raw("nombre")),
     reserva_personas: (() => { const n = parseInt(String(raw("reserva_personas")).replace(/\D/g, ""), 10); return n > 0 ? n : null; })(),
     reserva_fecha: String(raw("reserva_fecha")),
     reserva_hora: String(raw("reserva_hora")),
@@ -1016,6 +1016,7 @@ function validateRosso(p) {
     if (p.total == null) return "total es requerido (número en lempiras)";
     if (p.necesita_rtn == null) return "necesita_rtn es requerido (true/false)";
     if (p.necesita_rtn && (!p.rtn_numero || !p.rtn_nombre)) return "rtn_numero y rtn_nombre son requeridos cuando necesita_rtn es true";
+    if (p.necesita_rtn && String(p.rtn_numero).replace(/\D/g, "").length !== 14) return "BLOQUEADO: el RTN debe tener 14 dígitos. Pida el número de RTN otra vez, repítalo en pares de 2 dígitos, espere confirmación y vuelva a enviar";
     if (p.necesita_rtn && /^\s*no\s*aplica\s*$/i.test(p.rtn_nombre)) return "BLOQUEADO: falta el nombre del RTN. Pregunte al cliente a nombre de quién sería la factura, repita número y nombre, y vuelva a enviar";
   }
   if (p.tipo !== "pedido") {
