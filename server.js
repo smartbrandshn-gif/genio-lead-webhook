@@ -1090,6 +1090,18 @@ function rossoSplitItems(raw) {
   return out.length ? out : [String(raw || "")];
 }
 
+const ROSSO_FIXED = {
+  "ambos": { tipo: "ambos", tipo_pedido: "comer en el restaurante" },
+  "pedido": { tipo: "pedido", tipo_pedido: "recoger" },
+  "reserva": { tipo: "reserva" },
+};
+app.post("/webhooks/pedido-rosso/:sucursal/:tipo", (req, res, next) => {
+  const fx = ROSSO_FIXED[String(req.params.tipo).toLowerCase()];
+  if (!fx) return res.status(404).json({ ok: false, error: "ruta inválida" });
+  req.body = { ...(req.body && typeof req.body === "object" ? req.body : {}), sucursal: req.params.sucursal, ...fx };
+  req.url = "/webhooks/pedido-rosso";
+  next("route");
+});
 app.post("/webhooks/pedido-rosso", async (req, res) => {
   const auth = checkSecret(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
