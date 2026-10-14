@@ -1016,6 +1016,7 @@ function validateRosso(p) {
     if (p.total == null) return "total es requerido (número en lempiras)";
     if (p.necesita_rtn == null) return "necesita_rtn es requerido (true/false)";
     if (p.necesita_rtn && (!p.rtn_numero || !p.rtn_nombre)) return "rtn_numero y rtn_nombre son requeridos cuando necesita_rtn es true";
+    if (p.necesita_rtn && /^\s*no\s*aplica\s*$/i.test(p.rtn_nombre)) return "BLOQUEADO: falta el nombre del RTN. Pregunte al cliente a nombre de quién sería la factura, repita número y nombre, y vuelva a enviar";
   }
   if (p.tipo !== "pedido") {
     if (!p.reserva_nombre || looksFake(p.reserva_nombre)) return "reserva_nombre es requerido";
