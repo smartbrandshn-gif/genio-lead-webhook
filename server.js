@@ -929,7 +929,9 @@ const ROSSO_PROCERES_TO_EMAIL = process.env.ROSSO_PROCERES_TO_EMAIL || "sarmient
 const ROSSO_FROM = `"Rosso Napoletano Pedidos" <genionotificaciones@gmail.com>`;
 const SONORA_TO_EMAIL = process.env.SONORA_TO_EMAIL || "notificacionessonora@outlook.com";
 const SONORA_FROM = `"Sonora Pedidos" <genionotificaciones@gmail.com>`;
-const rossoBrand = (p) => (p.sucursal === "Sonora" ? "Sonora" : "Rosso Napoletano");
+const TUCHI_TO_EMAIL = process.env.TUCHI_TO_EMAIL || "sarmientod6@gmail.com";
+const TUCHI_FROM = `"Tuchi Pedidos" <genionotificaciones@gmail.com>`;
+const rossoBrand = (p) => (p.sucursal === "Sonora" || p.sucursal === "Tuchi" ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -939,6 +941,7 @@ function rossoSucursal(raw) {
   if (s.includes("foresta")) return "Foresta";
   if (s.includes("procer")) return "Proceres";
   if (s.includes("sonora")) return "Sonora";
+  if (s.includes("tuchi")) return "Tuchi";
   return "";
 }
 function rossoBool(raw) {
@@ -1034,8 +1037,8 @@ function buildRossoEmail(p) {
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
   const subject = hasPedido
-    ? `[Pedido ${p.sucursal === "Sonora" ? "Sonora" : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
-    : `[Reserva ${p.sucursal === "Sonora" ? "Sonora" : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`;
+    ? `[Pedido ${["Sonora", "Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
+    : `[Reserva ${["Sonora", "Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`;
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const pedidoBody = hasPedido ? formatPedidoCompleto(p.pedido) : "";
   const lines = [
@@ -1104,12 +1107,12 @@ app.post("/webhooks/pedido-rosso", async (req, res) => {
   const now = Date.now();
   for (const [k, t] of ROSSO_RECENT) if (now - t > 10 * 60 * 1000) ROSSO_RECENT.delete(k);
   if (ROSSO_RECENT.has(dupKey)) return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
-  const toEmail = p.sucursal === "Sonora" ? SONORA_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
+  const toEmail = p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Sonora" ? SONORA_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
   if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
   const email = buildRossoEmail(p);
   if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
   try {
-    const info = await createTransport().sendMail({ from: p.sucursal === "Sonora" ? SONORA_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
+    const info = await createTransport().sendMail({ from: p.sucursal === "Tuchi" ? TUCHI_FROM : p.sucursal === "Sonora" ? SONORA_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
     ROSSO_RECENT.set(dupKey, Date.now());
     console.log(`[rosso] enviado a ${toEmail} id=${info.messageId}`);
     return res.json({ ok: true, message: p.tipo === "reserva" ? "Reserva enviada" : "Pedido enviado", tipo: p.tipo, sucursal: p.sucursal, messageId: info.messageId, to: toEmail });
