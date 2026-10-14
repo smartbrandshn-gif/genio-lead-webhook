@@ -1088,6 +1088,7 @@ app.post("/webhooks/pedido-rosso/:sucursal/:tipo", (req, res, next) => {
   req.url = "/webhooks/pedido-rosso";
   next("route");
 });
+const ROSSO_RECENT = new Map();
 app.post("/webhooks/pedido-rosso", async (req, res) => {
   const auth = checkSecret(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
@@ -1095,12 +1096,17 @@ app.post("/webhooks/pedido-rosso", async (req, res) => {
   console.log("[rosso] inbound", p);
   const err = validateRosso(p);
   if (err) return res.status(400).json({ ok: false, error: err });
+  const dupKey = [p.sucursal, p.tipo, String(p.telefono).replace(/\D/g, ""), p.pedido || "", p.total ?? "", p.reserva_personas ?? "", p.reserva_fecha || "", p.reserva_hora || ""].join("|").toLowerCase();
+  const now = Date.now();
+  for (const [k, t] of ROSSO_RECENT) if (now - t > 10 * 60 * 1000) ROSSO_RECENT.delete(k);
+  if (ROSSO_RECENT.has(dupKey)) return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
   const toEmail = p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
   if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
   const email = buildRossoEmail(p);
   if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
   try {
     const info = await createTransport().sendMail({ from: ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
+    ROSSO_RECENT.set(dupKey, Date.now());
     console.log(`[rosso] enviado a ${toEmail} id=${info.messageId}`);
     return res.json({ ok: true, message: p.tipo === "reserva" ? "Reserva enviada" : "Pedido enviado", tipo: p.tipo, sucursal: p.sucursal, messageId: info.messageId, to: toEmail });
   } catch (e) {
