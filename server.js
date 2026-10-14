@@ -1015,9 +1015,6 @@ function validateRosso(p) {
     if (!p.tipo_pedido) return "tipo_pedido es requerido: 'recoger' o 'comer en el restaurante'";
     if (!p.pedido || looksFake(p.pedido)) return "pedido es requerido";
     if (p.total == null) return "total es requerido (número en lempiras)";
-    if (p.necesita_rtn && (!p.rtn_numero || !p.rtn_nombre)) return "rtn_numero y rtn_nombre son requeridos cuando necesita_rtn es true";
-    if (p.necesita_rtn && String(p.rtn_numero).replace(/\D/g, "").length !== 14) return "BLOQUEADO: el RTN debe tener 14 dígitos. Pida el número de RTN otra vez, repítalo en pares de 2 dígitos, espere confirmación y vuelva a enviar";
-    if (p.necesita_rtn && /^\s*no\s*aplica\s*$/i.test(p.rtn_nombre)) return "BLOQUEADO: falta el nombre del RTN. Pregunte al cliente a nombre de quién sería la factura, repita número y nombre, y vuelva a enviar";
   }
   if (p.tipo !== "pedido") {
     if (!p.reserva_nombre || looksFake(p.reserva_nombre)) return "reserva_nombre es requerido";
@@ -1050,11 +1047,6 @@ function buildRossoEmail(p) {
   if (hasPedido) {
     lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, `Total: ${rossoMoney(p.total)}`);
     pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", rossoMoney(p.total)]);
-    if (p.metodo_pago) { lines.push(`Método de pago: ${p.metodo_pago}`); pedRows.push(["Método de pago", p.metodo_pago]); }
-    if (p.necesita_rtn) {
-      lines.push(`Factura con RTN: Sí`, `RTN número: ${p.rtn_numero}`, `RTN a nombre de: ${p.rtn_nombre}`);
-      pedRows.push(["Factura con RTN", "Sí"], ["RTN número", p.rtn_numero], ["RTN a nombre de", p.rtn_nombre]);
-    }
   }
   const resRows = [];
   if (hasReserva) {
@@ -1068,8 +1060,6 @@ function buildRossoEmail(p) {
   const itemsTable = EMAIL_UI.itemsTable(items, hasPedido ? rossoMoney(p.total) : "");
   const cards = [card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]]))];
   if (hasPedido) {
-    cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]].concat(p.metodo_pago ? [["Método de pago", p.metodo_pago]] : [])) + itemsTable));
-    if (p.necesita_rtn) cards.push(card("Factura", kvTable([["RTN", "Sí"], ["Número RTN", p.rtn_numero], ["A nombre de", p.rtn_nombre]])));
   }
   if (hasReserva) cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
   if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
