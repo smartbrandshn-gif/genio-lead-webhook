@@ -436,9 +436,9 @@ const EMAIL_UI = (() => {
   const card = (t, inner) => `<tr><td style="padding:0 24px 16px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border:1px solid #e5e7eb;border-radius:8px;background:#ffffff">
     <tr><td style="${F}padding:12px 16px 4px;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:${ACCENT}">${escHtml(t)}</td></tr>
     <tr><td style="padding:0 16px 12px">${inner}</td></tr></table></td></tr>`;
-  const itemsTable = (items, total) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px">
+  const itemsTable = (items, total, extra = []) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px">
     <tr><td style="${F}padding:6px 10px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb">Detalle del pedido</td></tr>
-    ${items.map((it) => `<tr><td style="${F}padding:9px 10px;font-size:14px;color:#111827;border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`).join("")}
+    ${items.map((it) => `<tr><td style="${F}padding:9px 10px;font-size:14px;color:#111827;border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`).join("")}${extra.length ? `<tr><td style="padding:4px 0 8px">${kvTable(extra)}</td></tr>` : ""}
     <tr><td style="padding:0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>
       <td style="${F}padding:12px 10px;font-size:15px;font-weight:bold;color:${ACCENT};background:${ACCENT_BG}">Total</td>
       <td align="right" style="${F}padding:12px 10px;font-size:16px;font-weight:bold;color:${ACCENT};background:${ACCENT_BG};text-align:right">${escHtml(total)}</td></tr></table></td></tr></table>`;
@@ -1041,6 +1041,7 @@ function validateRosso(p) {
 }
 
 function buildRossoEmail(p) {
+  p = { ...p };
   const ts = guatemalaTimestamp();
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
@@ -1048,7 +1049,15 @@ function buildRossoEmail(p) {
     ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
     : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`;
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
-  const pedidoBody = hasPedido ? formatPedidoCompleto(p.pedido) : "";
+  const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : null;
+  if (mz) {
+    p = { ...p, tipo_pedido: mz.tipo || p.tipo_pedido };
+    if (!p.metodo_pago && mz.pago) p.metodo_pago = mz.pago;
+    if (!p.rtn_numero && mz.rtn) p.rtn_numero = mz.rtn;
+    if (!p.rtn_nombre && mz.rtnNombre) p.rtn_nombre = mz.rtnNombre;
+  }
+  const mzExtra = mz ? [["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
+  const pedidoBody = hasPedido ? (mz ? mz.items.join("\n") : formatPedidoCompleto(p.pedido)) : "";
   const lines = [
     `${title} — ${rossoBrand(p)} (${p.sucursal})`,
     "",
@@ -1060,7 +1069,7 @@ function buildRossoEmail(p) {
   const rows = [["Sucursal", p.sucursal], ["Cliente", p.nombre], ["Teléfono", p.telefono]];
   const pedRows = [];
   if (hasPedido) {
-    lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, `Total: ${rossoMoney(p.total)}`);
+    lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, ...mzExtra.map(([k, v]) => `${k}: ${v}`), `Total: ${rossoMoney(p.total)}`);
     pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", rossoMoney(p.total)]);
   }
   const resRows = [];
@@ -1069,10 +1078,10 @@ function buildRossoEmail(p) {
     resRows.push(["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Fecha", p.reserva_fecha], ["Hora", p.reserva_hora]);
   }
   lines.push("", `Notas: ${p.notas || "(ninguna)"}`);
-  const items = rossoSplitItems(p.pedido);
+  const items = mz ? mz.items : rossoSplitItems(p.pedido);
   const telFmt = p.telefono.length === 8 ? `${p.telefono.slice(0, 4)}-${p.telefono.slice(4)}` : p.telefono;
   const { kvTable, card } = EMAIL_UI;
-  const itemsTable = EMAIL_UI.itemsTable(items, hasPedido ? rossoMoney(p.total) : "");
+  const itemsTable = EMAIL_UI.itemsTable(items, hasPedido ? rossoMoney(p.total) : "", mzExtra);
   const cards = [card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]]))];
   if (hasPedido) {
     cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]]) + itemsTable));
@@ -1081,6 +1090,24 @@ function buildRossoEmail(p) {
   if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
   const html = EMAIL_UI.shell(`${title} — ${rossoBrand(p)}`, `Sucursal ${p.sucursal} · ${ts}`, cards);
   return { subject, text: lines.join("\n"), html };
+}
+
+// Solo El Manzano: "Delivery:/Recoger: <items>. Pago: X. RTN: 123, a nombre de Y"
+function parseManzanoPedido(raw) {
+  let s = String(raw || "").trim();
+  let tipo = "";
+  const pm = s.match(/^\s*(delivery|domicilio|recoger)\s*:\s*/i);
+  if (pm) { tipo = /recoger/i.test(pm[1]) ? "Para recoger" : "Delivery"; s = s.slice(pm[0].length); }
+  let rtn = "", rtnNombre = "", pago = "";
+  const rm = s.match(/[.;,|]?\s*RTN\s*:?\s*([\d\s-]{6,})(?:\s*,?\s*a\s+nombre\s+de\s+([^.;|]+?))?\s*(?=$|[.;|]\s|\.$)/i);
+  if (rm) { rtn = rm[1].replace(/\D/g, ""); rtnNombre = (rm[2] || "").trim(); s = s.replace(rm[0], " "); }
+  const pg = s.match(/[.;,|]?\s*(?:m[eé]todo de )?pago\s*:\s*([^.;|,]+)/i);
+  if (pg) { pago = pg[1].trim(); s = s.replace(pg[0], " "); }
+  if (/^no\s*aplica$/i.test(pago)) pago = "";
+  if (pago) pago = pago.charAt(0).toUpperCase() + pago.slice(1).toLowerCase();
+  s = s.replace(/\s+/g, " ").replace(/^[\s.;,|-]+|[\s.;,|-]+$/g, "").trim();
+  const items = s.split(/\s*\|\s*|\s*;\s*|\r?\n/).map((x) => x.trim().replace(/^[-•*]\s*/, "").replace(/[\s.,]+$/, "")).filter(Boolean);
+  return { tipo, pago, rtn, rtnNombre, items: items.length ? items : [s] };
 }
 
 function rossoSplitItems(raw) {
