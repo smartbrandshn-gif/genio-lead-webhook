@@ -1123,7 +1123,7 @@ function buildRossoEmail(p) {
     const salida = p.fecha_salida || "";
     const nombreCli = p.nombre; // nombre real que dio el cliente en la llamada
     // Plantilla final (sin bloque Cliente, sin cabaña elegida, sin notas/hora):
-    // nombre, teléfono, personas, fecha entrada, fecha salida, día, tipo
+    // nombre, teléfono, personas, fecha entrada, fecha salida, días, tipo
     lines.length = 0;
     lines.push(
       `Nueva reserva — Pulapansac`,
@@ -1132,7 +1132,7 @@ function buildRossoEmail(p) {
       "",
       "RESERVA",
       `Tipo de reserva: ${tipoRes}`,
-      ...(dias ? [`Día: ${dias}`] : []),
+      ...(dias ? [`Días: ${dias}`] : []),
       ...(entrada ? [`Fecha de entrada: ${entrada}`] : []),
       ...(salida ? [`Fecha de salida: ${salida}`] : []),
       `Personas: ${personas}`,
@@ -1141,7 +1141,7 @@ function buildRossoEmail(p) {
     );
     resRows.push(
       ["Tipo de reserva", tipoRes],
-      ...(dias ? [["Día", dias]] : []),
+      ...(dias ? [["Días", dias]] : []),
       ...(entrada ? [["Fecha de entrada", entrada]] : []),
       ...(salida ? [["Fecha de salida", salida]] : []),
       ["Personas", String(personas)],
@@ -1173,7 +1173,7 @@ function buildRossoEmail(p) {
     const nombreCli = p.nombre; // nombre real del cliente
     const kv = [
       ["Tipo de reserva", tipoRes],
-      ...(dias ? [["Día", dias]] : []),
+      ...(dias ? [["Días", dias]] : []),
       ...(entrada ? [["Fecha de entrada", entrada]] : []),
       ...(salida ? [["Fecha de salida", salida]] : []),
       ["Personas", String(personas)],
