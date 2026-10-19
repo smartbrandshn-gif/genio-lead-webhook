@@ -1130,7 +1130,7 @@ function buildRossoEmail(p) {
       "",
       `Fecha (America/Guatemala): ${ts}`,
       "",
-      "RESERVA",
+      "RESERVA — PULHAPANZAK",
       `Tipo de reserva: ${tipoRes}`,
       ...(dias ? [`Días: ${dias}`] : []),
       ...(entrada ? [`Fecha de entrada: ${entrada}`] : []),
@@ -1180,7 +1180,7 @@ function buildRossoEmail(p) {
       ["Nombre", nombreCli],
       ["Teléfono", telFmt],
     ];
-    cards.push(card("Reserva", kvTable(kv)));
+    cards.push(card("Reserva PULHAPANZAK", kvTable(kv)));
   } else if (hasReserva) {
     cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
   }
