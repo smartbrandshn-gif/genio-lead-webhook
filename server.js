@@ -936,7 +936,7 @@ const BOVINOS_FROM = `"Bovinos Pedidos" <genionotificaciones@gmail.com>`;
 const MANZANO_TO_EMAIL = process.env.MANZANO_TO_EMAIL || "sarmientod6@gmail.com";
 const MANZANO_FROM = `"El Manzano Pedidos" <genionotificaciones@gmail.com>`;
 const MEXCALI_ROSSO_FROM = `"Mexcali Pedidos" <genionotificaciones@gmail.com>`;
-const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "pulhahn@gmail.com";
+const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
 const PULHAPANZAC_FROM = `"Pulapanzác Pedidos" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_NOTA_FROM = `"Pulapanzác Notas" <genionotificaciones@gmail.com>`;
 const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapanzác" : ["Sonora", "Tuchi", "Bovinos", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
