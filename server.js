@@ -1043,10 +1043,18 @@ function extractRosso(req) {
       return n > 0 ? n : null;
     })(),
     menor_de_5_anos: (() => {
-      const rawV = raw("menor_de_5_anos") || raw("menores_de_5") || raw("menor_de_5");
+      const rawV = raw("menor_de_5_anos") || raw("menores_de_5") || raw("menor_de_5") || raw("ninos_menores_de_5");
       if (rawV === undefined || rawV === null || String(rawV).trim() === "") return null;
+      const s = String(rawV).trim().toLowerCase();
+      if (["si", "sí", "yes", "true", "1", "s"].includes(s)) return "Sí";
+      if (["no", "false", "0", "n"].includes(s)) return "No";
+      if (rawV === true) return "Sí";
+      if (rawV === false) return "No";
+      // legacy numeric count: any positive → Sí
       const n = parseInt(String(rawV).replace(/\D/g, ""), 10);
-      return n > 0 ? n : null;
+      if (n > 0) return "Sí";
+      if (n === 0) return "No";
+      return null;
     })(),
   };
 }
@@ -1075,6 +1083,9 @@ function validateRosso(p) {
         return "correo_electronico es requerido";
       }
       if (!p.cantidad_dias) return "cantidad_dias es requerida";
+      if (p.menor_de_5_anos !== "Sí" && p.menor_de_5_anos !== "No") {
+        return "menor_de_5_anos es requerido: sí o no";
+      }
       p.reserva_fecha = `${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`;
       if (!p.tipo_reserva) p.tipo_reserva = "cabaña";
       if (!p.reserva_nombre) p.reserva_nombre = p.nombre;
@@ -1129,7 +1140,9 @@ function buildRossoEmail(p) {
     const salida = p.fecha_salida || "";
     const nombreCli = p.nombre;
     const correo = p.correo_electronico || "";
-    // Escenario reserva de cabaña: 6 campos + reglas fijas (check-in/out, niños, pago)
+    // Reserva cabaña: nombre, tel, correo, fechas, noches+días, personas, menores sí/no
+    const noches = p.cantidad_dias;
+    const diasCal = noches != null ? noches + 1 : null;
     lines.length = 0;
     lines.push(
       `Nueva reserva — PULHAPANZAK`,
@@ -1142,15 +1155,10 @@ function buildRossoEmail(p) {
       `Correo electrónico: ${correo}`,
       `Fecha de entrada: ${entrada}`,
       `Fecha de salida: ${salida}`,
-      `Cantidad de días: ${p.cantidad_dias}`,
+      `Cantidad de noches: ${noches}`,
+      `Cantidad de días: ${diasCal}`,
       `Cantidad de personas: ${personas}`,
-      ...(p.menor_de_5_anos != null ? [`Menor de 5 años: ${p.menor_de_5_anos}`] : []),
-      "",
-      "INFORMACIÓN DE LA RESERVA",
-      "Check-in: 3:00 P.M.",
-      "Check-out: 1:00 P.M.",
-      "Los niños pagan de 5 años en adelante.",
-      "La reserva se tendrá que pagar el 100% por transferencia.",
+      `Niños menores de 5 años: ${p.menor_de_5_anos}`,
     );
     resRows.push(
       ["Nombre", nombreCli],
@@ -1158,13 +1166,10 @@ function buildRossoEmail(p) {
       ["Correo electrónico", correo],
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
-      ["Cantidad de días", String(p.cantidad_dias)],
+      ["Cantidad de noches", String(noches)],
+      ["Cantidad de días", String(diasCal)],
       ["Cantidad de personas", String(personas)],
-      ...(p.menor_de_5_anos != null ? [["Menor de 5 años", String(p.menor_de_5_anos)]] : []),
-      ["Check-in", "3:00 P.M."],
-      ["Check-out", "1:00 P.M."],
-      ["Niños", "Pagan de 5 años en adelante"],
-      ["Pago", "100% por transferencia"],
+      ["Niños menores de 5 años", String(p.menor_de_5_anos)],
     );
   } else if (hasReserva) {
     lines.push("", "RESERVA DE MESA", `A nombre de: ${p.reserva_nombre}`, `Personas: ${p.reserva_personas}`, `Fecha: ${p.reserva_fecha}`, `Hora: ${p.reserva_hora}`);
@@ -1188,19 +1193,18 @@ function buildRossoEmail(p) {
     const salida = p.fecha_salida || "";
     const nombreCli = p.nombre;
     const correo = p.correo_electronico || "";
+    const nochesKv = p.cantidad_dias;
+    const diasKv = nochesKv != null ? nochesKv + 1 : null;
     const kv = [
       ["Nombre", nombreCli],
       ["Teléfono", telFmt],
       ["Correo electrónico", correo],
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
-      ["Cantidad de días", String(p.cantidad_dias)],
+      ["Cantidad de noches", String(nochesKv)],
+      ["Cantidad de días", String(diasKv)],
       ["Cantidad de personas", String(personas)],
-      ...(p.menor_de_5_anos != null ? [["Menor de 5 años", String(p.menor_de_5_anos)]] : []),
-      ["Check-in", "3:00 P.M."],
-      ["Check-out", "1:00 P.M."],
-      ["Niños", "Pagan de 5 años en adelante"],
-      ["Pago", "100% por transferencia"],
+      ["Niños menores de 5 años", String(p.menor_de_5_anos)],
     ];
     cards.push(card("Reserva de cabaña — PULHAPANZAK", kvTable(kv)));
   } else if (hasReserva) {
