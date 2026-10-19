@@ -1008,7 +1008,7 @@ function extractRosso(req) {
     rtn_numero: String(raw("rtn_numero")),
     rtn_nombre: String(raw("rtn_nombre")),
     ...(() => {
-      let notas = String(raw("notas"));
+      let notas = String(raw("notas_cliente") || raw("notas"));
       let pago = String(raw("metodo_pago"));
       const re = /(m[eé]todo de )?pago\s*:\s*(efectivo|tarjeta)\s*[.;,]?/i;
       const mm = notas.match(re);
@@ -1018,9 +1018,25 @@ function extractRosso(req) {
       return { notas, metodo_pago: pago };
     })(),
     reserva_nombre: String(raw("reserva_nombre")) || String(raw("nombre")),
-    reserva_personas: (() => { const n = parseInt(String(raw("reserva_personas")).replace(/\D/g, ""), 10); return n > 0 ? n : null; })(),
+    reserva_personas: (() => {
+      const n = parseInt(String(raw("reserva_personas") || raw("cantidad_personas")).replace(/\D/g, ""), 10);
+      return n > 0 ? n : null;
+    })(),
     reserva_fecha: String(raw("reserva_fecha")),
     reserva_hora: String(raw("reserva_hora")),
+    // Pulapanzác cabaña / visita: campos de Daniel (+ aliases)
+    tipo_reserva: String(raw("tipo_reserva")),
+    dias_reserva: String(raw("dias_reserva") || raw("dias_estadia")),
+    dias_estadia: String(raw("dias_estadia") || raw("dias_reserva")),
+    cantidad_personas: (() => {
+      const n = parseInt(String(raw("cantidad_personas") || raw("reserva_personas")).replace(/\D/g, ""), 10);
+      return n > 0 ? n : null;
+    })(),
+    cabana_elegida: String(raw("cabana_elegida")),
+    notas_cliente: String(raw("notas_cliente") || raw("notas")),
+    fecha_llegada: String(raw("fecha_llegada") || raw("fecha_entrada")),
+    fecha_entrada: String(raw("fecha_entrada") || raw("fecha_llegada")),
+    fecha_salida: String(raw("fecha_salida")),
   };
 }
 
@@ -1037,9 +1053,27 @@ function validateRosso(p) {
   }
   if (p.tipo !== "pedido") {
     if (!p.reserva_nombre || looksFake(p.reserva_nombre)) return "reserva_nombre es requerido";
-    if (!p.reserva_personas) return "reserva_personas es requerido (número)";
-    if (!p.reserva_fecha) return "reserva_fecha es requerida";
-    if (!p.reserva_hora) return "reserva_hora es requerida";
+    // cantidad_personas / reserva_personas
+    if (!p.reserva_personas && p.cantidad_personas) p.reserva_personas = p.cantidad_personas;
+    if (!p.reserva_personas) return "reserva_personas / cantidad_personas es requerido (número)";
+    if (p.sucursal === "Pulhapanzac") {
+      // Pulapanzác: dias_estadia/dias_reserva, o fecha_entrada+fecha_salida, o reserva_fecha
+      const dias = p.dias_estadia || p.dias_reserva;
+      const tieneFechas = Boolean(p.fecha_entrada || p.fecha_llegada) && Boolean(p.fecha_salida);
+      if (!p.reserva_fecha && dias) p.reserva_fecha = dias;
+      if (!p.reserva_fecha && tieneFechas) {
+        p.reserva_fecha = `${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`;
+      }
+      if (!p.reserva_fecha && !dias && !tieneFechas) {
+        return "dias_estadia/dias_reserva, fecha_entrada+fecha_salida, o reserva_fecha es requerido";
+      }
+      // reserva_hora opcional en Pulapanzác (cabañas/visitas); aceptar si viene
+      if (!p.tipo_reserva) p.tipo_reserva = "cabaña";
+      if (!p.notas && p.notas_cliente) p.notas = p.notas_cliente;
+    } else {
+      if (!p.reserva_fecha) return "reserva_fecha es requerida";
+      if (!p.reserva_hora) return "reserva_hora es requerida";
+    }
   }
   return "";
 }
@@ -1051,7 +1085,9 @@ function buildRossoEmail(p) {
   const hasReserva = p.tipo !== "pedido";
   const subject = hasPedido
     ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapanzác" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
-    : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapanzác" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`;
+    : (p.sucursal === "Pulhapanzac"
+      ? `[Reserva Pulapanzác] ${p.reserva_nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}${p.cabana_elegida ? " - " + p.cabana_elegida : ""}`
+      : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : null;
   if (mz) {
@@ -1077,11 +1113,46 @@ function buildRossoEmail(p) {
     pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", rossoMoney(p.total)]);
   }
   const resRows = [];
-  if (hasReserva) {
+  const isPulhaReserva = hasReserva && p.sucursal === "Pulhapanzac";
+  if (hasReserva && isPulhaReserva) {
+    const tipoRes = p.tipo_reserva || "cabaña";
+    const dias = p.dias_estadia || p.dias_reserva || p.reserva_fecha || "";
+    const personas = p.cantidad_personas || p.reserva_personas;
+    const cabana = p.cabana_elegida || "";
+    const notasCli = p.notas_cliente || p.notas || "";
+    const entrada = p.fecha_entrada || p.fecha_llegada || "";
+    const salida = p.fecha_salida || "";
+    lines.push(
+      "",
+      "RESERVA — Pulapanzác",
+      `Tipo: ${tipoRes}`,
+      ...(dias ? [`Días: ${dias}`] : []),
+      ...(entrada ? [`Fecha de entrada: ${entrada}`] : []),
+      ...(salida ? [`Fecha de salida: ${salida}`] : []),
+      `Personas: ${personas}`,
+      ...(cabana ? [`Cabaña elegida: ${cabana}`] : []),
+      `Nombre: ${p.nombre}`,
+      `Teléfono: ${p.telefono}`,
+      `Notas del cliente: ${notasCli || "(ninguna)"}`,
+    );
+    if (p.reserva_hora) lines.push(`Hora: ${p.reserva_hora}`);
+    resRows.push(
+      ["Tipo", tipoRes],
+      ...(dias ? [["Días", dias]] : []),
+      ...(entrada ? [["Fecha de entrada", entrada]] : []),
+      ...(salida ? [["Fecha de salida", salida]] : []),
+      ["Personas", String(personas)],
+      ...(cabana ? [["Cabaña elegida", cabana]] : []),
+      ["Nombre", p.nombre],
+      ["Teléfono", p.telefono],
+      ["Notas del cliente", notasCli || "(ninguna)"],
+    );
+    if (p.reserva_hora) resRows.push(["Hora", p.reserva_hora]);
+  } else if (hasReserva) {
     lines.push("", "RESERVA DE MESA", `A nombre de: ${p.reserva_nombre}`, `Personas: ${p.reserva_personas}`, `Fecha: ${p.reserva_fecha}`, `Hora: ${p.reserva_hora}`);
     resRows.push(["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Fecha", p.reserva_fecha], ["Hora", p.reserva_hora]);
   }
-  lines.push("", `Notas: ${p.notas || "(ninguna)"}`);
+  if (!isPulhaReserva) lines.push("", `Notas: ${p.notas || "(ninguna)"}`);
   const items = mz ? mz.items : rossoSplitItems(p.pedido);
   const telFmt = p.telefono.length === 8 ? `${p.telefono.slice(0, 4)}-${p.telefono.slice(4)}` : p.telefono;
   const { kvTable, card } = EMAIL_UI;
@@ -1090,8 +1161,31 @@ function buildRossoEmail(p) {
   if (hasPedido) {
     cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]]) + itemsTable));
   }
-  if (hasReserva) cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
-  if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
+  if (hasReserva && isPulhaReserva) {
+    const tipoRes = p.tipo_reserva || "cabaña";
+    const dias = p.dias_estadia || p.dias_reserva || p.reserva_fecha || "";
+    const personas = p.cantidad_personas || p.reserva_personas;
+    const cabana = p.cabana_elegida || "";
+    const notasCli = p.notas_cliente || p.notas || "";
+    const entrada = p.fecha_entrada || p.fecha_llegada || "";
+    const salida = p.fecha_salida || "";
+    const kv = [
+      ["Tipo", tipoRes],
+      ...(dias ? [["Días", dias]] : []),
+      ...(entrada ? [["Fecha de entrada", entrada]] : []),
+      ...(salida ? [["Fecha de salida", salida]] : []),
+      ["Personas", String(personas)],
+      ...(cabana ? [["Cabaña elegida", cabana]] : []),
+      ["Nombre", p.nombre],
+      ["Teléfono", telFmt],
+    ];
+    if (p.reserva_hora) kv.push(["Hora", p.reserva_hora]);
+    cards.push(card("Reserva", kvTable(kv)));
+    if (notasCli) cards.push(EMAIL_UI.notasCard(notasCli));
+  } else if (hasReserva) {
+    cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
+  }
+  if (!isPulhaReserva && p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
   const html = EMAIL_UI.shell(`${title} — ${rossoBrand(p)}`, `Sucursal ${p.sucursal} · ${ts}`, cards);
   return { subject, text: lines.join("\n"), html };
 }
