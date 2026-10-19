@@ -1046,14 +1046,14 @@ function extractRosso(req) {
       const rawV = raw("menor_de_5_anos") || raw("menores_de_5") || raw("menor_de_5") || raw("ninos_menores_de_5");
       if (rawV === undefined || rawV === null || String(rawV).trim() === "") return null;
       const s = String(rawV).trim().toLowerCase();
-      if (["si", "sí", "yes", "true", "1", "s"].includes(s)) return "Sí";
-      if (["no", "false", "0", "n"].includes(s)) return "No";
-      if (rawV === true) return "Sí";
-      if (rawV === false) return "No";
+      if (["si", "sí", "yes", "true", "1", "s"].includes(s)) return "sí";
+      if (["no", "false", "0", "n"].includes(s)) return "no";
+      if (rawV === true) return "sí";
+      if (rawV === false) return "no";
       // legacy numeric count: any positive → Sí
       const n = parseInt(String(rawV).replace(/\D/g, ""), 10);
-      if (n > 0) return "Sí";
-      if (n === 0) return "No";
+      if (n > 0) return "sí";
+      if (n === 0) return "no";
       return null;
     })(),
   };
@@ -1083,8 +1083,8 @@ function validateRosso(p) {
         return "correo_electronico es requerido";
       }
       if (!p.cantidad_dias) return "cantidad_dias es requerida";
-      if (p.menor_de_5_anos !== "Sí" && p.menor_de_5_anos !== "No") {
-        return "menor_de_5_anos es requerido: sí o no";
+      if (p.menor_de_5_anos !== "sí" && p.menor_de_5_anos !== "no") {
+        return "niños menores es requerido: sí o no";
       }
       p.reserva_fecha = `${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`;
       if (!p.tipo_reserva) p.tipo_reserva = "cabaña";
@@ -1158,7 +1158,7 @@ function buildRossoEmail(p) {
       `Cantidad de noches: ${noches}`,
       `Cantidad de días: ${diasCal}`,
       `Cantidad de personas: ${personas}`,
-      `Niños menores de 5 años: ${p.menor_de_5_anos}`,
+      `niños menores: ${p.menor_de_5_anos}`,
     );
     resRows.push(
       ["Nombre", nombreCli],
@@ -1169,7 +1169,7 @@ function buildRossoEmail(p) {
       ["Cantidad de noches", String(noches)],
       ["Cantidad de días", String(diasCal)],
       ["Cantidad de personas", String(personas)],
-      ["Niños menores de 5 años", String(p.menor_de_5_anos)],
+      ["niños menores", String(p.menor_de_5_anos)],
     );
   } else if (hasReserva) {
     lines.push("", "RESERVA DE MESA", `A nombre de: ${p.reserva_nombre}`, `Personas: ${p.reserva_personas}`, `Fecha: ${p.reserva_fecha}`, `Hora: ${p.reserva_hora}`);
@@ -1204,7 +1204,7 @@ function buildRossoEmail(p) {
       ["Cantidad de noches", String(nochesKv)],
       ["Cantidad de días", String(diasKv)],
       ["Cantidad de personas", String(personas)],
-      ["Niños menores de 5 años", String(p.menor_de_5_anos)],
+      ["niños menores", String(p.menor_de_5_anos)],
     ];
     cards.push(card("Reserva de cabaña — PULHAPANZAK", kvTable(kv)));
   } else if (hasReserva) {
