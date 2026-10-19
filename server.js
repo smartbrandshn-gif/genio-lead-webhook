@@ -1038,6 +1038,12 @@ function extractRosso(req) {
     fecha_entrada: String(raw("fecha_entrada") || raw("fecha_llegada")),
     fecha_salida: String(raw("fecha_salida")),
     correo_electronico: String(raw("correo_electronico") || raw("correo") || raw("email")),
+    menor_de_5_anos: (() => {
+      const rawV = raw("menor_de_5_anos") || raw("menores_de_5") || raw("menor_de_5");
+      if (rawV === undefined || rawV === null || String(rawV).trim() === "") return null;
+      const n = parseInt(String(rawV).replace(/\D/g, ""), 10);
+      return n > 0 ? n : null;
+    })(),
   };
 }
 
@@ -1132,6 +1138,7 @@ function buildRossoEmail(p) {
       `Fecha de entrada: ${entrada}`,
       `Fecha de salida: ${salida}`,
       `Cantidad de personas: ${personas}`,
+      ...(p.menor_de_5_anos != null ? [`Menor de 5 años: ${p.menor_de_5_anos}`] : []),
       "",
       "INFORMACIÓN DE LA RESERVA",
       "Check-in: 3:00 P.M.",
@@ -1146,6 +1153,7 @@ function buildRossoEmail(p) {
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
       ["Cantidad de personas", String(personas)],
+      ...(p.menor_de_5_anos != null ? [["Menor de 5 años", String(p.menor_de_5_anos)]] : []),
       ["Check-in", "3:00 P.M."],
       ["Check-out", "1:00 P.M."],
       ["Niños", "Pagan de 5 años en adelante"],
@@ -1180,6 +1188,7 @@ function buildRossoEmail(p) {
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
       ["Cantidad de personas", String(personas)],
+      ...(p.menor_de_5_anos != null ? [["Menor de 5 años", String(p.menor_de_5_anos)]] : []),
       ["Check-in", "3:00 P.M."],
       ["Check-out", "1:00 P.M."],
       ["Niños", "Pagan de 5 años en adelante"],
