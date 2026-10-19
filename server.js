@@ -937,9 +937,9 @@ const MANZANO_TO_EMAIL = process.env.MANZANO_TO_EMAIL || "sarmientod6@gmail.com"
 const MANZANO_FROM = `"El Manzano Pedidos" <genionotificaciones@gmail.com>`;
 const MEXCALI_ROSSO_FROM = `"Mexcali Pedidos" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
-const PULHAPANZAC_FROM = `"Pulapanzác Pedidos" <genionotificaciones@gmail.com>`;
-const PULHAPANZAC_NOTA_FROM = `"Pulapanzác Notas" <genionotificaciones@gmail.com>`;
-const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapanzác" : ["Sonora", "Tuchi", "Bovinos", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
+const PULHAPANZAC_FROM = `"Pulhapanzak Pedidos" <genionotificaciones@gmail.com>`;
+const PULHAPANZAC_NOTA_FROM = `"Pulhapanzak Notas" <genionotificaciones@gmail.com>`;
+const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulhapanzak" : ["Sonora", "Tuchi", "Bovinos", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -1085,7 +1085,7 @@ function buildRossoEmail(p) {
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
   const subject = hasPedido
-    ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapanzác" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
+    ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulhapanzak" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
     : (p.sucursal === "Pulhapanzac"
       ? `[Reserva Pulapanzác] ${p.nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}`
       : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
@@ -1126,7 +1126,7 @@ function buildRossoEmail(p) {
     // nombre, teléfono, personas, fecha entrada, fecha salida, día, tipo
     lines.length = 0;
     lines.push(
-      `Nueva reserva — Pulapanzác`,
+      `Nueva reserva — Pulhapanzak`,
       "",
       `Fecha (America/Guatemala): ${ts}`,
       "",
@@ -1252,10 +1252,10 @@ app.post("/webhooks/pedido-rosso/:sucursal/nota", async (req, res) => {
 
   const ts = guatemalaTimestamp();
   const shortMotivo = motivo.length > 80 ? motivo.slice(0, 77) + "…" : motivo;
-  const subject = `[Pulapanzác] Nota interna: ${shortMotivo}`;
+  const subject = `[Pulhapanzak] Nota interna: ${shortMotivo}`;
   const spirit = `No pude resolver esto: ${motivo}. Por favor contactar al cliente y darle la información correcta.`;
   const text = [
-    "NOTA INTERNA — Cataratas Pulapanzác",
+    "NOTA INTERNA — Cataratas Pulhapanzak",
     "",
     spirit,
     "",
@@ -1272,7 +1272,7 @@ app.post("/webhooks/pedido-rosso/:sucursal/nota", async (req, res) => {
     card("Detalle", kvTable([["Motivo", motivo]])),
     EMAIL_UI.notasCard(notas),
   ];
-  const html = EMAIL_UI.shell("Nota interna — Pulapanzác", ts, cards);
+  const html = EMAIL_UI.shell("Nota interna — Pulhapanzak", ts, cards);
 
   try {
     const info = await createTransport().sendMail({
