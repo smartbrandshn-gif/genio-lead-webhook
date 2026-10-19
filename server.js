@@ -937,9 +937,9 @@ const MANZANO_TO_EMAIL = process.env.MANZANO_TO_EMAIL || "sarmientod6@gmail.com"
 const MANZANO_FROM = `"El Manzano Pedidos" <genionotificaciones@gmail.com>`;
 const MEXCALI_ROSSO_FROM = `"Mexcali Pedidos" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
-const PULHAPANZAC_FROM = `"Pulapansac Pedidos" <genionotificaciones@gmail.com>`;
-const PULHAPANZAC_NOTA_FROM = `"Pulapansac Notas" <genionotificaciones@gmail.com>`;
-const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapansac" : ["Sonora", "Tuchi", "Bovinos", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
+const PULHAPANZAC_FROM = `"PULHAPANZAK Pedidos" <genionotificaciones@gmail.com>`;
+const PULHAPANZAC_NOTA_FROM = `"PULHAPANZAK Notas" <genionotificaciones@gmail.com>`;
+const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Sonora", "Tuchi", "Bovinos", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -1085,9 +1085,9 @@ function buildRossoEmail(p) {
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
   const subject = hasPedido
-    ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapansac" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
+    ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
     : (p.sucursal === "Pulhapanzac"
-      ? `[Reserva Pulapansac] ${p.nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}`
+      ? `[Reserva PULHAPANZAK] ${p.nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}`
       : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : null;
@@ -1126,7 +1126,7 @@ function buildRossoEmail(p) {
     // nombre, teléfono, personas, fecha entrada, fecha salida, días, tipo
     lines.length = 0;
     lines.push(
-      `Nueva reserva — Pulapansac`,
+      `Nueva reserva — PULHAPANZAK`,
       "",
       `Fecha (America/Guatemala): ${ts}`,
       "",
@@ -1252,10 +1252,10 @@ app.post("/webhooks/pedido-rosso/:sucursal/nota", async (req, res) => {
 
   const ts = guatemalaTimestamp();
   const shortMotivo = motivo.length > 80 ? motivo.slice(0, 77) + "…" : motivo;
-  const subject = `[Pulapansac] Nota interna: ${shortMotivo}`;
+  const subject = `[PULHAPANZAK] Nota interna: ${shortMotivo}`;
   const spirit = `No pude resolver esto: ${motivo}. Por favor contactar al cliente y darle la información correcta.`;
   const text = [
-    "NOTA INTERNA — Cataratas Pulapansac",
+    "NOTA INTERNA — Cataratas PULHAPANZAK",
     "",
     spirit,
     "",
@@ -1272,7 +1272,7 @@ app.post("/webhooks/pedido-rosso/:sucursal/nota", async (req, res) => {
     card("Detalle", kvTable([["Motivo", motivo]])),
     EMAIL_UI.notasCard(notas),
   ];
-  const html = EMAIL_UI.shell("Nota interna — Pulapansac", ts, cards);
+  const html = EMAIL_UI.shell("Nota interna — PULHAPANZAK", ts, cards);
 
   try {
     const info = await createTransport().sendMail({
