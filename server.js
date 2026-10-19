@@ -1038,6 +1038,10 @@ function extractRosso(req) {
     fecha_entrada: String(raw("fecha_entrada") || raw("fecha_llegada")),
     fecha_salida: String(raw("fecha_salida")),
     correo_electronico: String(raw("correo_electronico") || raw("correo") || raw("email")),
+    cantidad_dias: (() => {
+      const n = parseInt(String(raw("cantidad_dias") || raw("dias_estadia") || raw("dias_reserva")).replace(/\D/g, ""), 10);
+      return n > 0 ? n : null;
+    })(),
     menor_de_5_anos: (() => {
       const rawV = raw("menor_de_5_anos") || raw("menores_de_5") || raw("menor_de_5");
       if (rawV === undefined || rawV === null || String(rawV).trim() === "") return null;
@@ -1070,6 +1074,7 @@ function validateRosso(p) {
       if (!p.correo_electronico || !String(p.correo_electronico).includes("@")) {
         return "correo_electronico es requerido";
       }
+      if (!p.cantidad_dias) return "cantidad_dias es requerida";
       p.reserva_fecha = `${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`;
       if (!p.tipo_reserva) p.tipo_reserva = "cabaña";
       if (!p.reserva_nombre) p.reserva_nombre = p.nombre;
@@ -1137,6 +1142,7 @@ function buildRossoEmail(p) {
       `Correo electrónico: ${correo}`,
       `Fecha de entrada: ${entrada}`,
       `Fecha de salida: ${salida}`,
+      `Cantidad de días: ${p.cantidad_dias}`,
       `Cantidad de personas: ${personas}`,
       ...(p.menor_de_5_anos != null ? [`Menor de 5 años: ${p.menor_de_5_anos}`] : []),
       "",
@@ -1152,6 +1158,7 @@ function buildRossoEmail(p) {
       ["Correo electrónico", correo],
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
+      ["Cantidad de días", String(p.cantidad_dias)],
       ["Cantidad de personas", String(personas)],
       ...(p.menor_de_5_anos != null ? [["Menor de 5 años", String(p.menor_de_5_anos)]] : []),
       ["Check-in", "3:00 P.M."],
@@ -1187,6 +1194,7 @@ function buildRossoEmail(p) {
       ["Correo electrónico", correo],
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
+      ["Cantidad de días", String(p.cantidad_dias)],
       ["Cantidad de personas", String(personas)],
       ...(p.menor_de_5_anos != null ? [["Menor de 5 años", String(p.menor_de_5_anos)]] : []),
       ["Check-in", "3:00 P.M."],
