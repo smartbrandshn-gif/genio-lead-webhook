@@ -1033,6 +1033,11 @@ function extractRosso(req) {
       return n > 0 ? n : null;
     })(),
     cabana_elegida: String(raw("cabana_elegida")),
+    // Pulhapanzac reserva: notas verbatim (alias pedido_especial)
+    notas_reserva: (() => {
+      const v = m.notas != null && String(m.notas).trim() !== "" ? m.notas : m.pedido_especial;
+      return v == null ? "" : String(v);
+    })(),
     notas_cliente: String(raw("notas_cliente") || raw("notas")),
     fecha_llegada: String(raw("fecha_llegada") || raw("fecha_entrada")),
     fecha_entrada: String(raw("fecha_entrada") || raw("fecha_llegada")),
@@ -1159,6 +1164,7 @@ function buildRossoEmail(p) {
       `Cantidad de días: ${diasCal}`,
       `Cantidad de personas: ${personas}`,
       `niños menores: ${p.menor_de_5_anos}`,
+      `Notas: ${String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"}`,
     );
     resRows.push(
       ["Nombre", nombreCli],
@@ -1170,6 +1176,7 @@ function buildRossoEmail(p) {
       ["Cantidad de días", String(diasCal)],
       ["Cantidad de personas", String(personas)],
       ["niños menores", String(p.menor_de_5_anos)],
+      ["Notas", String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"],
     );
   } else if (hasReserva) {
     lines.push("", "RESERVA DE MESA", `A nombre de: ${p.reserva_nombre}`, `Personas: ${p.reserva_personas}`, `Fecha: ${p.reserva_fecha}`, `Hora: ${p.reserva_hora}`);
@@ -1205,6 +1212,7 @@ function buildRossoEmail(p) {
       ["Cantidad de días", String(diasKv)],
       ["Cantidad de personas", String(personas)],
       ["niños menores", String(p.menor_de_5_anos)],
+      ["Notas", String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"],
     ];
     cards.push(card("Reserva de cabaña — PULHAPANZAK", kvTable(kv)));
   } else if (hasReserva) {
