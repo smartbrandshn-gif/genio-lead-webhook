@@ -1086,7 +1086,7 @@ function buildRossoEmail(p) {
   const subject = hasPedido
     ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulapanzác" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
     : (p.sucursal === "Pulhapanzac"
-      ? `[Reserva Pulapanzác] ${p.reserva_nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}${p.cabana_elegida ? " - " + p.cabana_elegida : ""}`
+      ? `[Reserva Pulapanzác] ${p.reserva_nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}`
       : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : null;
@@ -1118,7 +1118,6 @@ function buildRossoEmail(p) {
     const tipoRes = p.tipo_reserva || "cabaña";
     const dias = p.dias_estadia || p.dias_reserva || p.reserva_fecha || "";
     const personas = p.cantidad_personas || p.reserva_personas;
-    const cabana = p.cabana_elegida || "";
     const notasCli = p.notas_cliente || p.notas || "";
     const entrada = p.fecha_entrada || p.fecha_llegada || "";
     const salida = p.fecha_salida || "";
@@ -1130,7 +1129,6 @@ function buildRossoEmail(p) {
       ...(entrada ? [`Fecha de entrada: ${entrada}`] : []),
       ...(salida ? [`Fecha de salida: ${salida}`] : []),
       `Personas: ${personas}`,
-      ...(cabana ? [`Cabaña elegida: ${cabana}`] : []),
       `Nombre: ${p.nombre}`,
       `Teléfono: ${p.telefono}`,
       `Notas del cliente: ${notasCli || "(ninguna)"}`,
@@ -1142,7 +1140,6 @@ function buildRossoEmail(p) {
       ...(entrada ? [["Fecha de entrada", entrada]] : []),
       ...(salida ? [["Fecha de salida", salida]] : []),
       ["Personas", String(personas)],
-      ...(cabana ? [["Cabaña elegida", cabana]] : []),
       ["Nombre", p.nombre],
       ["Teléfono", p.telefono],
       ["Notas del cliente", notasCli || "(ninguna)"],
@@ -1165,7 +1162,6 @@ function buildRossoEmail(p) {
     const tipoRes = p.tipo_reserva || "cabaña";
     const dias = p.dias_estadia || p.dias_reserva || p.reserva_fecha || "";
     const personas = p.cantidad_personas || p.reserva_personas;
-    const cabana = p.cabana_elegida || "";
     const notasCli = p.notas_cliente || p.notas || "";
     const entrada = p.fecha_entrada || p.fecha_llegada || "";
     const salida = p.fecha_salida || "";
@@ -1175,7 +1171,6 @@ function buildRossoEmail(p) {
       ...(entrada ? [["Fecha de entrada", entrada]] : []),
       ...(salida ? [["Fecha de salida", salida]] : []),
       ["Personas", String(personas)],
-      ...(cabana ? [["Cabaña elegida", cabana]] : []),
       ["Nombre", p.nombre],
       ["Teléfono", telFmt],
     ];
