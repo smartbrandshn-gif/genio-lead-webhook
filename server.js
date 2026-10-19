@@ -1164,7 +1164,7 @@ function buildRossoEmail(p) {
       `Cantidad de días: ${diasCal}`,
       `Cantidad de personas: ${personas}`,
       `niños menores: ${p.menor_de_5_anos}`,
-      `Notas: ${String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"}`,
+      `Solicitud especial del cliente: ${String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"}`,
     );
     resRows.push(
       ["Nombre", nombreCli],
@@ -1176,7 +1176,7 @@ function buildRossoEmail(p) {
       ["Cantidad de días", String(diasCal)],
       ["Cantidad de personas", String(personas)],
       ["niños menores", String(p.menor_de_5_anos)],
-      ["Notas", String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"],
+      ["Solicitud especial del cliente", String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"],
     );
   } else if (hasReserva) {
     lines.push("", "RESERVA DE MESA", `A nombre de: ${p.reserva_nombre}`, `Personas: ${p.reserva_personas}`, `Fecha: ${p.reserva_fecha}`, `Hora: ${p.reserva_hora}`);
@@ -1212,7 +1212,7 @@ function buildRossoEmail(p) {
       ["Cantidad de días", String(diasKv)],
       ["Cantidad de personas", String(personas)],
       ["niños menores", String(p.menor_de_5_anos)],
-      ["Notas", String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"],
+      ["Solicitud especial del cliente", String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"],
     ];
     cards.push(card("Reserva de cabaña — PULHAPANZAK", kvTable(kv)));
   } else if (hasReserva) {
