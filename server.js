@@ -937,6 +937,7 @@ const MANZANO_TO_EMAIL = process.env.MANZANO_TO_EMAIL || "sarmientod6@gmail.com"
 const MANZANO_FROM = `"El Manzano Pedidos" <genionotificaciones@gmail.com>`;
 const MEXCALI_ROSSO_FROM = `"Mexcali Pedidos" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
+const PULHAPANZAC_RESERVA_TO_EMAIL = "sarmientod6@gmail.com, pulhahn@gmail.com, catarataspulhapanzak@gmail.com";
 const PULHAPANZAC_FROM = `"PULHAPANZAK Pedidos" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_NOTA_FROM = `"PULHAPANZAK Notas" <genionotificaciones@gmail.com>`;
 const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Sonora", "Tuchi", "Bovinos", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
@@ -1353,7 +1354,7 @@ app.post("/webhooks/pedido-rosso", async (req, res) => {
   const now = Date.now();
   for (const [k, t] of ROSSO_RECENT) if (now - t > 10 * 60 * 1000) ROSSO_RECENT.delete(k);
   if (ROSSO_RECENT.has(dupKey)) return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
-  const toEmail = p.sucursal === "Pulhapanzac" ? PULHAPANZAC_TO_EMAIL : p.sucursal === "Mexcali" ? MEXCALI_PEDIDO_TO_EMAIL : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "Bovinos" ? BOVINOS_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Sonora" ? SONORA_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
+  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Mexcali" ? MEXCALI_PEDIDO_TO_EMAIL : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "Bovinos" ? BOVINOS_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Sonora" ? SONORA_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
   if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
   const email = buildRossoEmail(p);
   if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
