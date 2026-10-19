@@ -1087,7 +1087,7 @@ function buildRossoEmail(p) {
   const subject = hasPedido
     ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "Pulhapanzak" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
     : (p.sucursal === "Pulhapanzac"
-      ? `[Reserva Pulapanzác] ${p.nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}`
+      ? `[Reserva Pulhapanzak] ${p.nombre} - ${p.tipo_reserva || "cabaña"} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.dias_estadia || p.dias_reserva || p.reserva_fecha}`
       : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : null;
