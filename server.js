@@ -788,6 +788,96 @@ app.post("/webhooks/cancelar-pedido", async (req, res) => {
   }
 });
 
+/* ---------- Wangs: reservas (ruta nueva; no toca rutas existentes) ---------- */
+function extractReservaWangs(req) {
+  const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  const nombre_cliente = pick(merged, ["nombre_cliente", "nombre", "name"]);
+  const personasRaw = merged.reserva_personas != null ? String(merged.reserva_personas).trim() : "";
+  const reserva_fecha = pick(merged, ["reserva_fecha", "fecha", "dia"]);
+  const reserva_hora = pick(merged, ["reserva_hora", "hora"]);
+  let notas = pick(merged, ["notas", "notes"]);
+  if (!notas || /sin\s+notas/i.test(notas) || looksFake(notas)) notas = "";
+  const phone = resolveCallerPhone(req);
+  return { nombre_cliente, reserva_personas: personasRaw, reserva_fecha, reserva_hora, notas, caller_id: phone.caller_id, _callerIdSource: phone.source };
+}
+
+function validateReservaWangs(r) {
+  if (!r.nombre_cliente || looksFake(r.nombre_cliente)) return "nombre_cliente real es requerido";
+  const phone = String(r.caller_id || "").trim();
+  if (!phone || /^no$/i.test(phone) || looksFake(phone) || phone.replace(/\D/g, "").length < 7) {
+    return "numero_cliente real es requerido: digitos que el cliente diga (no inventar, no omitir)";
+  }
+  if (!r.reserva_personas || looksFake(r.reserva_personas)) return "reserva_personas es requerido (número de personas)";
+  if (!r.reserva_fecha || looksFake(r.reserva_fecha)) return "reserva_fecha es requerida (día)";
+  if (!r.reserva_hora || looksFake(r.reserva_hora)) return "reserva_hora es requerida";
+  return "";
+}
+
+function buildReservaWangsEmail(r) {
+  const ts = guatemalaTimestamp();
+  const subject = `Nueva reserva Wangs - ${r.nombre_cliente}`;
+  const tel = EMAIL_UI.fmtTel(r.caller_id);
+  const lines = [
+    "Nueva reserva — Wangs",
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    `Nombre: ${r.nombre_cliente}`,
+    `Teléfono: ${tel}`,
+    `Personas: ${r.reserva_personas}`,
+    `Día: ${r.reserva_fecha}`,
+    `Hora: ${r.reserva_hora}`,
+  ];
+  if (r.notas) lines.push(`Notas: ${r.notas}`);
+  const cards = [
+    EMAIL_UI.card("Reserva", EMAIL_UI.kvTable([
+      ["Nombre", r.nombre_cliente],
+      ["Teléfono", tel],
+      ["Personas", String(r.reserva_personas)],
+      ["Día", r.reserva_fecha],
+      ["Hora", r.reserva_hora],
+    ])),
+  ];
+  if (r.notas) cards.push(EMAIL_UI.notasCard(r.notas));
+  const html = EMAIL_UI.shell("Nueva reserva — Wangs", ts, cards);
+  return { subject, text: lines.join("\n"), html };
+}
+
+app.post("/webhooks/enviar-reserva", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const r = extractReservaWangs(req);
+  console.log("[reserva-wangs] inbound", r);
+  const err = validateReservaWangs(r);
+  if (err) return res.status(400).json({ ok: false, error: err });
+
+  const toEmail = PEDIDO_TO_EMAIL || LEAD_TO_EMAIL;
+  if (!toEmail) {
+    return res.status(500).json({ ok: false, error: "PEDIDO_TO_EMAIL / LEAD_TO_EMAIL no configurado" });
+  }
+  if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+    return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+  }
+
+  try {
+    const transport = createTransport();
+    const { subject, text, html } = buildReservaWangsEmail(r);
+    const fromName = LEAD_FROM_NAME || "Pedido Wangs";
+    const info = await transport.sendMail({
+      from: `"${fromName}" <${SMTP_USER}>`,
+      to: toEmail,
+      subject,
+      text,
+      html,
+    });
+    console.log(`[reserva-wangs] enviado a ${toEmail} id=${info.messageId}`);
+    return res.json({ ok: true, message: "Reserva enviada", messageId: info.messageId, to: toEmail });
+  } catch (e) {
+    console.error("[reserva-wangs] SMTP", e?.message || e);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: e?.message || String(e) });
+  }
+});
+
 /**
  * Rutas de pedido/cancelación para un restaurante adicional.
  * Mismo payload, validación, secreto y manejo de número que Wangs.
