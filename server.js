@@ -1343,8 +1343,8 @@ function buildRossoEmail(p) {
   return { subject, text: lines.join("\n"), html };
 }
 
-// Solo El Manzano: "Delivery:/Recoger: <items>. Pago: X. RTN: 123, a nombre de Y"
-// Detalle jerárquico (como el menú): cantidad+plato, -tamaño, -Acompañantes/-Salsa, •opciones
+// Solo El Manzano: "Delivery:/Recoger: <items>. Pago: X. RTN: …"
+// Parrillas en el email: qty+plato, -Parrilla Personal|Duo|Cuarteto, -Acompañantes, •opts (una línea c/u)
 function parseManzanoPedido(raw) {
   let s = String(raw || "").trim();
   let tipo = "";
@@ -1357,53 +1357,63 @@ function parseManzanoPedido(raw) {
   if (pg) { pago = pg[1].trim(); s = s.replace(pg[0], "\n"); }
   if (/^no\s*aplica$/i.test(pago)) pago = "";
   if (pago) pago = pago.charAt(0).toUpperCase() + pago.slice(1).toLowerCase();
-  // Conservar saltos de línea y viñetas (- / •); no aplastar a una sola línea
-  const chunks = s.split(/\s*\|\s*|\s*;\s*|\r?\n/).map((x) => x.trim()).filter(Boolean);
+  let chunks = s.split(/\s*\|\s*|\s*;\s*|\r?\n/).map((x) => x.trim()).filter(Boolean);
+  // Si el modelo pegó " / " en vez de Enter, partir cada chunk
+  chunks = chunks.flatMap((c) =>
+    /\s\/\s/.test(c) && /(-Parrilla|•|-Acompa)/i.test(c)
+      ? c.split(/\s\/\s/).map((x) => x.trim()).filter(Boolean)
+      : [c]
+  );
   const items = expandManzanoDetalleItems(chunks.length ? chunks : [s.trim()].filter(Boolean));
   return { tipo, pago, rtn, rtnNombre, items: items.length ? items : [String(raw || "").trim()] };
 }
 
-/** Solo Parrillas (Tradicional / Mar y Tierra / Tierra y Mar): qty+plato, -tamaño, -Acompañantes, •opts */
+/** Solo Parrillas (Tradicional, Mar y Tierra, Tierra y Mar). */
 function expandManzanoDetalleItems(chunks) {
   const out = [];
   const sizeRe = /\bParrilla\s+(Personal|Duo|Cuarteto)\b/i;
   const parrillaDishRe = /\b(Tradicional|Mar y Tierra|Tierra y Mar)\b/i;
+  const pushUnique = (line) => {
+    if (!line) return;
+    if (/^-Parrilla\s+/i.test(line) && out.some((x) => x.toLowerCase() === line.toLowerCase())) return;
+    if (out.length && out[out.length - 1] === line) return;
+    out.push(line);
+  };
   for (const raw of chunks) {
     const line = String(raw || "").trim();
     if (!line) continue;
-    // Ya desglosado: conservar prefijos
     if (/^[-–—•·*]/.test(line)) {
-      const cleaned = line
-        .replace(/^[-–—]\s*/, "-")
-        .replace(/^[•·*]\s*/, "•");
-      if (/^-Acompa[nñ]antes$/i.test(cleaned)) out.push("-Acompañantes");
-      else if (/^-Salsa$/i.test(cleaned)) out.push("-Salsa");
+      let cleaned = line.replace(/^[-–—]\s*/, "-").replace(/^[•·*]\s*/, "•");
+      if (/^-Acompa[nñ]antes$/i.test(cleaned)) cleaned = "-Acompañantes";
+      else if (/^-Salsa$/i.test(cleaned)) cleaned = "-Salsa";
       else if (/^-Parrilla\s+(Personal|Duo|Cuarteto)$/i.test(cleaned)) {
         const g = cleaned.match(/Parrilla\s+(Personal|Duo|Cuarteto)/i);
-        out.push(`-Parrilla ${g[1].charAt(0).toUpperCase()}${g[1].slice(1).toLowerCase()}`);
-      } else out.push(cleaned);
+        cleaned = `-Parrilla ${g[1].charAt(0).toUpperCase()}${g[1].slice(1).toLowerCase()}`;
+      }
+      pushUnique(cleaned);
       continue;
     }
     const m = line.match(/^(\d+)\s+(.+?)(?:\s+con\s+(.+))?$/i);
-    if (!m) { out.push(line); continue; }
+    if (!m) { pushUnique(line); continue; }
     const qty = m[1];
     let rest = m[2].trim();
     const optsRaw = (m[3] || "").trim();
     const isParrilla = sizeRe.test(rest) || sizeRe.test(line) || parrillaDishRe.test(rest);
-    // Otros platos: una sola línea (sin este formato)
-    if (!isParrilla) { out.push(line); continue; }
+    if (!isParrilla) { pushUnique(line); continue; }
     let size = "";
     const sm = rest.match(sizeRe);
     if (sm) {
       size = `Parrilla ${sm[1].charAt(0).toUpperCase()}${sm[1].slice(1).toLowerCase()}`;
       rest = rest.replace(sizeRe, " ").replace(/\s+/g, " ").trim();
     }
-    out.push(`${qty} ${rest || line}`);
-    if (size) out.push(`-${size}`);
+    if (rest) rest = rest.charAt(0).toUpperCase() + rest.slice(1);
+    pushUnique(`${qty} ${rest || line}`);
+    if (size) pushUnique(`-${size}`);
     if (optsRaw) {
-      const opts = optsRaw.split(/\s+y\s+/i).map((x) => x.trim()).filter(Boolean);
-      out.push("-Acompañantes");
-      for (const o of opts) out.push(`•${o}`);
+      pushUnique("-Acompañantes");
+      for (const o of optsRaw.split(/\s+y\s+/i).map((x) => x.trim()).filter(Boolean)) {
+        pushUnique(`•${o}`);
+      }
     }
   }
   return out.length ? out : chunks;
