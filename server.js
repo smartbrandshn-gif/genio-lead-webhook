@@ -1439,6 +1439,15 @@ const ROSSO_FIXED = {
   "pedido": { tipo: "pedido", tipo_pedido: "recoger" },
   "reserva": { tipo: "reserva" },
 };
+// Ruta neutra (sin "rosso"): /webhooks/pedido/:sucursal/:tipo — Manzano y futuros clientes
+app.post("/webhooks/pedido/:sucursal/:tipo", (req, res, next) => {
+  const fx = ROSSO_FIXED[String(req.params.tipo).toLowerCase()];
+  if (!fx) return res.status(404).json({ ok: false, error: "ruta inválida" });
+  req.body = { ...(req.body && typeof req.body === "object" ? req.body : {}), sucursal: req.params.sucursal, ...fx };
+  req.url = "/webhooks/pedido-rosso";
+  next("route");
+});
+// Legacy Rosso / otros clientes que aún apuntan a pedido-rosso
 app.post("/webhooks/pedido-rosso/:sucursal/:tipo", (req, res, next) => {
   const fx = ROSSO_FIXED[String(req.params.tipo).toLowerCase()];
   if (!fx) return res.status(404).json({ ok: false, error: "ruta inválida" });
