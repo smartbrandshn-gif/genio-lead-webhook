@@ -449,7 +449,7 @@ const EMAIL_UI = (() => {
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-collapse:separate;border:1px solid #e5e7eb;border-radius:10px">
   <tr><td style="background:${ACCENT};padding:22px 24px;border-radius:10px 10px 0 0">
     <div style="${F}font-size:20px;font-weight:bold;color:#ffffff">${escHtml(title)}</div>
-    <div style="${F}font-size:13px;color:${ACCENT_SUB};padding-top:6px">${escHtml(subtitle)}</div>
+    ${subtitle ? `<div style="${F}font-size:13px;color:${ACCENT_SUB};padding-top:6px">${escHtml(subtitle)}</div>` : ""}
   </td></tr>
   <tr><td style="height:20px;line-height:20px;font-size:0">&nbsp;</td></tr>
   ${cards.join("\n  ")}
@@ -1326,7 +1326,9 @@ function buildRossoEmail(p) {
     cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
   }
   if (!isPulhaReserva && p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
-  const html = EMAIL_UI.shell(`${title} — ${rossoBrand(p)}`, `Sucursal ${p.sucursal} · ${ts}`, cards);
+  const html = p.sucursal === "Manzano"
+    ? EMAIL_UI.shell(ts, "", cards) // franja verde: solo fecha/hora
+    : EMAIL_UI.shell(`${title} — ${rossoBrand(p)}`, `Sucursal ${p.sucursal} · ${ts}`, cards);
   return { subject, text: lines.join("\n"), html };
 }
 
