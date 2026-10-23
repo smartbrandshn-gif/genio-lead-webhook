@@ -13,9 +13,6 @@ const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "";
 const DEMO_LEAD_TO_EMAIL = process.env.DEMO_LEAD_TO_EMAIL || "smartbrandshn@gmail.com";
 const DEMO_FROM_EMAIL = "genionotificaciones@gmail.com";
 const PEDIDO_TO_EMAIL = process.env.PEDIDO_TO_EMAIL || "";
-// Mexcali (2do restaurante): destino propio; fallback en código para no depender de Render env
-const MEXCALI_PEDIDO_TO_EMAIL = process.env.MEXCALI_PEDIDO_TO_EMAIL || "sarmientod6@gmail.com";
-const MEXCALI_FROM_NAME = "Pedido Mexcali";
 const LEAD_FROM_NAME = process.env.LEAD_FROM_NAME || "Genio Demo";
 const CLIENT_LABEL = process.env.CLIENT_LABEL || "Genio Demo";
 
@@ -503,7 +500,7 @@ function buildPedidoEmail(pedido) {
   return { subject, text, html };
 }
 
-/* ---------- Restaurantes adicionales (Mexcali, …) ----------
+/* ---------- Restaurantes adicionales (slug /enviar-pedido) ----------
  * Builders parametrizados por nombre de negocio. Mismo formato que Wangs
  * (los builders/rutas de Wangs arriba y abajo NO se tocan).
  */
@@ -628,7 +625,6 @@ app.get("/health", (_req, res) => {
     time: guatemalaTimestamp(),
     smtpConfigured: Boolean(SMTP_USER && SMTP_APP_PASSWORD && LEAD_TO_EMAIL),
     pedidoToConfigured: Boolean(PEDIDO_TO_EMAIL || LEAD_TO_EMAIL),
-    mexcaliPedidoToConfigured: Boolean(MEXCALI_PEDIDO_TO_EMAIL),
     secretConfigured: Boolean(LEAD_WEBHOOK_SECRET),
   });
 });
@@ -1019,13 +1015,6 @@ function registerRestaurantPedidoRoutes({ slug, business, toEmail, fromName }) {
   });
 }
 
-registerRestaurantPedidoRoutes({
-  slug: "mexcali",
-  business: "Mexcali",
-  toEmail: MEXCALI_PEDIDO_TO_EMAIL,
-  fromName: MEXCALI_FROM_NAME,
-});
-
 /* ---------- Rosso Napoletano (2 sucursales: Foresta / Proceres) ----------
  * Ruta independiente: pedidos y/o reservas. No modifica rutas existentes.
  */
@@ -1036,12 +1025,11 @@ const TUCHI_TO_EMAIL = process.env.TUCHI_TO_EMAIL || "sarmientod6@gmail.com";
 const TUCHI_FROM = `"Tuchi Pedidos" <genionotificaciones@gmail.com>`;
 const MANZANO_TO_EMAIL = process.env.MANZANO_TO_EMAIL || "sarmientod6@gmail.com";
 const MANZANO_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
-const MEXCALI_ROSSO_FROM = `"Mexcali Pedidos" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
 const PULHAPANZAC_RESERVA_TO_EMAIL = "sarmientod6@gmail.com, pulhahn@gmail.com, catarataspulhapanzak@gmail.com";
 const PULHAPANZAC_FROM = `"PULHAPANZAK Pedidos" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_NOTA_FROM = `"PULHAPANZAK Notas" <genionotificaciones@gmail.com>`;
-const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
+const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -1052,7 +1040,6 @@ function rossoSucursal(raw) {
   if (s.includes("procer")) return "Proceres";
   if (s.includes("tuchi")) return "Tuchi";
   if (s.includes("manzano")) return "Manzano";
-  if (s.includes("mexcali") || s.includes("mexcalí")) return "Mexcali";
   if (s.includes("pulhapanz") || s.includes("pulapanz")) return "Pulhapanzac";
   return "";
 }
@@ -1224,10 +1211,10 @@ function buildRossoEmail(p) {
     subject = hasPedido ? `Nuevo pedido: ${who}` : `Nueva reserva: ${who}`;
   } else {
     subject = hasPedido
-      ? `[Pedido ${["Tuchi", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
+      ? `[Pedido ${["Tuchi", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
       : (p.sucursal === "Pulhapanzac"
         ? `[Reserva PULHAPANZAK] ${p.nombre} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`
-        : `[Reserva ${["Tuchi", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
+        : `[Reserva ${["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
   }
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mzExtra = mz ? [["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
@@ -1522,12 +1509,12 @@ async function handleRossoPedido(req, res) {
   const now = Date.now();
   for (const [k, t] of ROSSO_RECENT) if (now - t > 10 * 60 * 1000) ROSSO_RECENT.delete(k);
   if (ROSSO_RECENT.has(dupKey)) return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
-  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Mexcali" ? MEXCALI_PEDIDO_TO_EMAIL : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
+  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
   if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
   const email = buildRossoEmail(p);
   if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
   try {
-    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Mexcali" ? MEXCALI_ROSSO_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
+    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
     ROSSO_RECENT.set(dupKey, Date.now());
     console.log(`[rosso] enviado a ${toEmail} id=${info.messageId}`);
     return res.json({ ok: true, message: p.tipo === "reserva" ? "Reserva enviada" : "Pedido enviado", tipo: p.tipo, sucursal: p.sucursal, messageId: info.messageId, to: toEmail });
