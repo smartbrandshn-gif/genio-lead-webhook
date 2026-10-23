@@ -1210,11 +1210,12 @@ function buildRossoEmail(p) {
   }
   let subject;
   if (p.sucursal === "Manzano") {
-    // Exact subject labels requested for El Manzano only
-    if (!hasPedido) subject = "reserva";
+    // Subject: scenario + client name, no amount (El Manzano only)
+    const who = String((!hasPedido ? (p.reserva_nombre || p.nombre) : p.nombre) || "").trim() || "cliente";
+    if (!hasPedido) subject = `Reserva ${who}`;
     else {
       const tip = String(p.tipo_pedido || "").toLowerCase();
-      subject = /deliver|domicilio/.test(tip) ? "pedido delivery" : "pedido recoger";
+      subject = /deliver|domicilio/.test(tip) ? `Pedido delivery ${who}` : `Pedido recoger ${who}`;
     }
   } else {
     subject = hasPedido
