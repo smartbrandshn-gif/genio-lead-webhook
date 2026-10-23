@@ -443,7 +443,11 @@ const EMAIL_UI = (() => {
     <tr><td style="padding:0 16px 12px">${inner}</td></tr></table></td></tr>`;
   const itemsTable = (items, total, extra = []) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px">
     <tr><td style="${F}padding:6px 10px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb">Detalle del pedido</td></tr>
-    ${items.map((it) => `<tr><td style="${F}padding:9px 10px;font-size:14px;color:#111827;border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`).join("")}${extra.length ? `<tr><td style="padding:4px 0 8px">${kvTable(extra)}</td></tr>` : ""}
+    ${items.map((it) => {
+      const opt = /^[·•]/.test(String(it).trim());
+      const pad = opt ? "padding:4px 10px 4px 28px;font-size:13px;color:#4b5563;" : "padding:9px 10px;font-size:14px;color:#111827;";
+      return `<tr><td style="${F}${pad}border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`;
+    }).join("")}${extra.length ? `<tr><td style="padding:4px 0 8px">${kvTable(extra)}</td></tr>` : ""}
     <tr><td style="padding:0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>
       <td style="${F}padding:12px 10px;font-size:15px;font-weight:bold;color:${ACCENT};background:${ACCENT_BG}">Total</td>
       <td align="right" style="${F}padding:12px 10px;font-size:16px;font-weight:bold;color:${ACCENT};background:${ACCENT_BG};text-align:right">${escHtml(total)}</td></tr></table></td></tr></table>`;
@@ -1348,7 +1352,24 @@ function parseManzanoPedido(raw) {
   if (pago) pago = pago.charAt(0).toUpperCase() + pago.slice(1).toLowerCase();
   s = s.replace(/\s+/g, " ").replace(/^[\s.;,|-]+|[\s.;,|-]+$/g, "").trim();
   const items = s.split(/\s*\|\s*|\s*;\s*|\r?\n/).map((x) => x.trim().replace(/^[-•*]\s*/, "").replace(/[\s.,]+$/, "")).filter(Boolean);
-  return { tipo, pago, rtn, rtnNombre, items: items.length ? items : [s] };
+  return { tipo, pago, rtn, rtnNombre, items: expandManzanoDetalleItems(items.length ? items : [s]) };
+}
+
+/** Desglosa "1 Plato con opt1 y opt2" → plato + viñetas de opciones (solo email Manzano). */
+function expandManzanoDetalleItems(items) {
+  const out = [];
+  for (const line of items) {
+    const m = String(line || "").match(/^(\d+\s+.+?)\s+con\s+(.+)$/i);
+    if (!m) {
+      out.push(line);
+      continue;
+    }
+    out.push(m[1].trim());
+    for (const opt of m[2].split(/\s+y\s+/i).map((x) => x.trim()).filter(Boolean)) {
+      out.push(`· ${opt}`);
+    }
+  }
+  return out.length ? out : items;
 }
 
 function rossoSplitItems(raw) {
