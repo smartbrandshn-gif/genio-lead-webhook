@@ -53,11 +53,16 @@ app.use((req, res, next) => {
 });
 
 function guatemalaTimestamp(date = new Date()) {
-  return new Intl.DateTimeFormat("es-GT", {
+  const raw = new Intl.DateTimeFormat("es-GT", {
     timeZone: "America/Guatemala",
     dateStyle: "full",
     timeStyle: "medium",
   }).format(date);
+  // Día y mes con mayúscula inicial (Jueves, Octubre) en correos/notificaciones
+  return raw.replace(
+    /\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/gi,
+    (w) => w.charAt(0).toUpperCase() + w.slice(1)
+  );
 }
 
 function checkSecret(req) {
