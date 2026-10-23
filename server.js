@@ -1215,13 +1215,9 @@ function buildRossoEmail(p) {
   }
   let subject;
   if (p.sucursal === "Manzano") {
-    // Subject: scenario + client name, no amount (El Manzano only)
+    // Subject: always "Nuevo pedido: {nombre}" (pedido, delivery, recoger o reserva)
     const who = String((!hasPedido ? (p.reserva_nombre || p.nombre) : p.nombre) || "").trim() || "cliente";
-    if (!hasPedido) subject = `Reserva ${who}`;
-    else {
-      const tip = String(p.tipo_pedido || "").toLowerCase();
-      subject = /deliver|domicilio/.test(tip) ? `Pedido delivery ${who}` : `Pedido recoger ${who}`;
-    }
+    subject = `Nuevo pedido: ${who}`;
   } else {
     subject = hasPedido
       ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
