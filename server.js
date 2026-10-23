@@ -12,6 +12,7 @@ const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "";
 // Genio Demo (sales demo agent): destino propio, no afecta LEAD_TO_EMAIL de otros clientes
 const DEMO_LEAD_TO_EMAIL = process.env.DEMO_LEAD_TO_EMAIL || "smartbrandshn@gmail.com";
 const DEMO_FROM_EMAIL = "genionotificaciones@gmail.com";
+const GENIO_NOTIFICACIONES_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const PEDIDO_TO_EMAIL = process.env.PEDIDO_TO_EMAIL || "";
 const LEAD_FROM_NAME = process.env.LEAD_FROM_NAME || "Genio Demo";
 const CLIENT_LABEL = process.env.CLIENT_LABEL || "Genio Demo";
@@ -147,7 +148,7 @@ function validateLead(lead) {
 function buildEmail(lead) {
   const ts = guatemalaTimestamp();
   const subject = lead.negocio
-    ? `[Lead Genio Demo] ${lead.negocio} (${lead.interes}) — ${lead.nombre}${lead.plan_interes ? ` — ${lead.plan_interes}` : ""}`
+    ? `Nuevo lead: ${lead.nombre}`
     : `[Lead ${CLIENT_LABEL}] ${lead.interes} — ${lead.nombre}`;
   const text = [
     `Nuevo lead — ${CLIENT_LABEL}`,
@@ -171,7 +172,7 @@ function buildEmail(lead) {
     const cards = [card("Contacto", kvTable(contacto)), card("Negocio", kvTable(negocio))];
     if (lead.horario_contacto) cards.push(card("Horario de contacto", kvTable([["Horario", lead.horario_contacto]])));
     if (lead.notas) cards.push(EMAIL_UI.notasCard(lead.notas));
-    return { subject, text, html: EMAIL_UI.shell("Nuevo lead — Genio Demo", ts, cards) };
+    return { subject, text, html: EMAIL_UI.shell(ts, "", cards) }; // franja verde: solo fecha/hora (mismo diseño Manzano)
   }
   const esc = (s) =>
     String(s)
@@ -473,7 +474,7 @@ const EMAIL_UI = (() => {
 
 function buildPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
-  const subject = `[Pedido Wangs] ${pedido.nombre_cliente} — ${pedido.total_pedido}`;
+  const subject = `Nuevo pedido: ${pedido.nombre_cliente}`;
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
   const numeroCliente = pedido.caller_id || "no";
   const text = [
@@ -496,7 +497,7 @@ function buildPedidoEmail(pedido) {
     card("Factura", kvTable([["RTN", pedido.rtn]])),
   ];
   if (pedido.notas) cards.push(EMAIL_UI.notasCard(pedido.notas));
-  const html = EMAIL_UI.shell("Nuevo pedido — Wangs", ts, cards);
+  const html = EMAIL_UI.shell(ts, "", cards); // franja verde: solo fecha/hora
   return { subject, text, html };
 }
 
@@ -662,7 +663,7 @@ async function handleLead(req, res) {
     const { subject, text, html } = buildEmail(lead);
     const leadTo = lead.negocio ? DEMO_LEAD_TO_EMAIL : LEAD_TO_EMAIL;
     const info = await transport.sendMail({
-      from: lead.negocio ? `"Genio Demo" <${DEMO_FROM_EMAIL}>` : `"${LEAD_FROM_NAME}" <${SMTP_USER}>`,
+      from: lead.negocio ? `"Genio Notificaciones" <${DEMO_FROM_EMAIL}>` : `"${LEAD_FROM_NAME}" <${SMTP_USER}>`,
       to: leadTo,
       subject,
       text,
@@ -719,9 +720,8 @@ app.post("/webhooks/enviar-pedido", async (req, res) => {
   try {
     const transport = createTransport();
     const { subject, text, html } = buildPedidoEmail(pedido);
-    const fromName = LEAD_FROM_NAME || "Pedido Wangs";
     const info = await transport.sendMail({
-      from: `"${fromName}" <${SMTP_USER}>`,
+      from: GENIO_NOTIFICACIONES_FROM,
       to: toEmail,
       subject,
       text,
@@ -826,7 +826,7 @@ function validateReservaWangs(r) {
 
 function buildReservaWangsEmail(r) {
   const ts = guatemalaTimestamp();
-  const subject = `Nueva reserva Wangs - ${r.nombre_cliente}`;
+  const subject = `Nueva reserva: ${r.nombre_cliente}`;
   const tel = EMAIL_UI.fmtTel(r.caller_id);
   const lines = [
     "Nueva reserva — Wangs",
@@ -849,7 +849,7 @@ function buildReservaWangsEmail(r) {
     ])),
   ];
   if (r.notas) cards.push(EMAIL_UI.notasCard(r.notas));
-  const html = EMAIL_UI.shell("Nueva reserva — Wangs", ts, cards);
+  const html = EMAIL_UI.shell(ts, "", cards); // franja verde: solo fecha/hora
   return { subject, text: lines.join("\n"), html };
 }
 
@@ -873,9 +873,8 @@ app.post("/webhooks/enviar-reserva", async (req, res) => {
   try {
     const transport = createTransport();
     const { subject, text, html } = buildReservaWangsEmail(r);
-    const fromName = LEAD_FROM_NAME || "Pedido Wangs";
     const info = await transport.sendMail({
-      from: `"${fromName}" <${SMTP_USER}>`,
+      from: GENIO_NOTIFICACIONES_FROM,
       to: toEmail,
       subject,
       text,
@@ -1027,8 +1026,8 @@ const MANZANO_TO_EMAIL = process.env.MANZANO_TO_EMAIL || "sarmientod6@gmail.com"
 const MANZANO_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
 const PULHAPANZAC_RESERVA_TO_EMAIL = "sarmientod6@gmail.com, pulhahn@gmail.com, catarataspulhapanzak@gmail.com";
-const PULHAPANZAC_FROM = `"PULHAPANZAK Pedidos" <genionotificaciones@gmail.com>`;
-const PULHAPANZAC_NOTA_FROM = `"PULHAPANZAK Notas" <genionotificaciones@gmail.com>`;
+const PULHAPANZAC_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
+const PULHAPANZAC_NOTA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
@@ -1205,8 +1204,8 @@ function buildRossoEmail(p) {
     if (!p.rtn_nombre && mz.rtnNombre) p.rtn_nombre = mz.rtnNombre;
   }
   let subject;
-  if (p.sucursal === "Manzano") {
-    // Subject: pedido/delivery/recoger → Nuevo pedido; reserva → Nueva reserva
+  if (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac") {
+    // Subject estilo Manzano: Nuevo pedido/reserva: nombre (sin monto)
     const who = String((!hasPedido ? (p.reserva_nombre || p.nombre) : p.nombre) || "").trim() || "cliente";
     subject = hasPedido ? `Nuevo pedido: ${who}` : `Nueva reserva: ${who}`;
   } else {
@@ -1318,7 +1317,7 @@ function buildRossoEmail(p) {
     cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
   }
   if (!isPulhaReserva && p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
-  const html = p.sucursal === "Manzano"
+  const html = (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac")
     ? EMAIL_UI.shell(ts, "", cards) // franja verde: solo fecha/hora
     : EMAIL_UI.shell(`${title} — ${rossoBrand(p)}`, `Sucursal ${p.sucursal} · ${ts}`, cards);
   return { subject, text: lines.join("\n"), html };
@@ -1445,7 +1444,7 @@ app.post("/webhooks/pedido-rosso/:sucursal/nota", async (req, res) => {
 
   const ts = guatemalaTimestamp();
   const shortMotivo = motivo.length > 80 ? motivo.slice(0, 77) + "…" : motivo;
-  const subject = `[PULHAPANZAK] Nota interna: ${shortMotivo}`;
+  const subject = `Nueva nota: ${nombre || shortMotivo}`;
   const spirit = `No pude resolver esto: ${motivo}. Por favor contactar al cliente y darle la información correcta.`;
   const text = [
     "NOTA INTERNA — Cataratas PULHAPANZAK",
@@ -1465,7 +1464,7 @@ app.post("/webhooks/pedido-rosso/:sucursal/nota", async (req, res) => {
     card("Detalle", kvTable([["Motivo", motivo]])),
     EMAIL_UI.notasCard(notas),
   ];
-  const html = EMAIL_UI.shell("Nota interna — PULHAPANZAK", ts, cards);
+  const html = EMAIL_UI.shell(ts, "", cards); // franja verde: solo fecha/hora
 
   try {
     const info = await createTransport().sendMail({
