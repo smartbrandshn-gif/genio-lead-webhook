@@ -444,8 +444,14 @@ const EMAIL_UI = (() => {
   const itemsTable = (items, total, extra = []) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px">
     <tr><td style="${F}padding:6px 10px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb">Detalle del pedido</td></tr>
     ${items.map((it) => {
-      const opt = /^[·•]/.test(String(it).trim());
-      const pad = opt ? "padding:4px 10px 4px 28px;font-size:13px;color:#4b5563;" : "padding:9px 10px;font-size:14px;color:#111827;";
+      const t = String(it).trim();
+      const bullet = /^[·•]/.test(t);
+      const sub = /^[-–—]/.test(t);
+      const pad = bullet
+        ? "padding:3px 10px 3px 36px;font-size:13px;color:#374151;"
+        : sub
+          ? "padding:6px 10px 4px 18px;font-size:13px;color:#6b7280;font-weight:600;"
+          : "padding:9px 10px;font-size:14px;color:#111827;font-weight:bold;";
       return `<tr><td style="${F}${pad}border-bottom:1px solid #f1f1f1">${escHtml(it)}</td></tr>`;
     }).join("")}${extra.length ? `<tr><td style="padding:4px 0 8px">${kvTable(extra)}</td></tr>` : ""}
     <tr><td style="padding:0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>
@@ -1338,6 +1344,7 @@ function buildRossoEmail(p) {
 }
 
 // Solo El Manzano: "Delivery:/Recoger: <items>. Pago: X. RTN: 123, a nombre de Y"
+// Detalle jerárquico (como el menú): cantidad+plato, -tamaño, -Acompañantes/-Salsa, •opciones
 function parseManzanoPedido(raw) {
   let s = String(raw || "").trim();
   let tipo = "";
@@ -1345,31 +1352,61 @@ function parseManzanoPedido(raw) {
   if (pm) { tipo = /recoger/i.test(pm[1]) ? "Para recoger" : "Delivery"; s = s.slice(pm[0].length); }
   let rtn = "", rtnNombre = "", pago = "";
   const rm = s.match(/[.;,|]?\s*RTN\s*:?\s*([\d\s-]{6,})(?:\s*,?\s*a\s+nombre\s+de\s+([^.;|]+?))?\s*(?=$|[.;|]\s|\.$)/i);
-  if (rm) { rtn = rm[1].replace(/\D/g, ""); rtnNombre = (rm[2] || "").trim(); s = s.replace(rm[0], " "); }
+  if (rm) { rtn = rm[1].replace(/\D/g, ""); rtnNombre = (rm[2] || "").trim(); s = s.replace(rm[0], "\n"); }
   const pg = s.match(/[.;,|]?\s*(?:m[eé]todo de )?pago\s*:\s*([^.;|,]+)/i);
-  if (pg) { pago = pg[1].trim(); s = s.replace(pg[0], " "); }
+  if (pg) { pago = pg[1].trim(); s = s.replace(pg[0], "\n"); }
   if (/^no\s*aplica$/i.test(pago)) pago = "";
   if (pago) pago = pago.charAt(0).toUpperCase() + pago.slice(1).toLowerCase();
-  s = s.replace(/\s+/g, " ").replace(/^[\s.;,|-]+|[\s.;,|-]+$/g, "").trim();
-  const items = s.split(/\s*\|\s*|\s*;\s*|\r?\n/).map((x) => x.trim().replace(/^[-•*]\s*/, "").replace(/[\s.,]+$/, "")).filter(Boolean);
-  return { tipo, pago, rtn, rtnNombre, items: expandManzanoDetalleItems(items.length ? items : [s]) };
+  // Conservar saltos de línea y viñetas (- / •); no aplastar a una sola línea
+  const chunks = s.split(/\s*\|\s*|\s*;\s*|\r?\n/).map((x) => x.trim()).filter(Boolean);
+  const items = expandManzanoDetalleItems(chunks.length ? chunks : [s.trim()].filter(Boolean));
+  return { tipo, pago, rtn, rtnNombre, items: items.length ? items : [String(raw || "").trim()] };
 }
 
-/** Desglosa "1 Plato con opt1 y opt2" → plato + viñetas de opciones (solo email Manzano). */
-function expandManzanoDetalleItems(items) {
+/** Solo Parrillas (Tradicional / Mar y Tierra / Tierra y Mar): qty+plato, -tamaño, -Acompañantes, •opts */
+function expandManzanoDetalleItems(chunks) {
   const out = [];
-  for (const line of items) {
-    const m = String(line || "").match(/^(\d+\s+.+?)\s+con\s+(.+)$/i);
-    if (!m) {
-      out.push(line);
+  const sizeRe = /\bParrilla\s+(Personal|Duo|Cuarteto)\b/i;
+  const parrillaDishRe = /\b(Tradicional|Mar y Tierra|Tierra y Mar)\b/i;
+  for (const raw of chunks) {
+    const line = String(raw || "").trim();
+    if (!line) continue;
+    // Ya desglosado: conservar prefijos
+    if (/^[-–—•·*]/.test(line)) {
+      const cleaned = line
+        .replace(/^[-–—]\s*/, "-")
+        .replace(/^[•·*]\s*/, "•");
+      if (/^-Acompa[nñ]antes$/i.test(cleaned)) out.push("-Acompañantes");
+      else if (/^-Salsa$/i.test(cleaned)) out.push("-Salsa");
+      else if (/^-Parrilla\s+(Personal|Duo|Cuarteto)$/i.test(cleaned)) {
+        const g = cleaned.match(/Parrilla\s+(Personal|Duo|Cuarteto)/i);
+        out.push(`-Parrilla ${g[1].charAt(0).toUpperCase()}${g[1].slice(1).toLowerCase()}`);
+      } else out.push(cleaned);
       continue;
     }
-    out.push(m[1].trim());
-    for (const opt of m[2].split(/\s+y\s+/i).map((x) => x.trim()).filter(Boolean)) {
-      out.push(`· ${opt}`);
+    const m = line.match(/^(\d+)\s+(.+?)(?:\s+con\s+(.+))?$/i);
+    if (!m) { out.push(line); continue; }
+    const qty = m[1];
+    let rest = m[2].trim();
+    const optsRaw = (m[3] || "").trim();
+    const isParrilla = sizeRe.test(rest) || sizeRe.test(line) || parrillaDishRe.test(rest);
+    // Otros platos: una sola línea (sin este formato)
+    if (!isParrilla) { out.push(line); continue; }
+    let size = "";
+    const sm = rest.match(sizeRe);
+    if (sm) {
+      size = `Parrilla ${sm[1].charAt(0).toUpperCase()}${sm[1].slice(1).toLowerCase()}`;
+      rest = rest.replace(sizeRe, " ").replace(/\s+/g, " ").trim();
+    }
+    out.push(`${qty} ${rest || line}`);
+    if (size) out.push(`-${size}`);
+    if (optsRaw) {
+      const opts = optsRaw.split(/\s+y\s+/i).map((x) => x.trim()).filter(Boolean);
+      out.push("-Acompañantes");
+      for (const o of opts) out.push(`•${o}`);
     }
   }
-  return out.length ? out : items;
+  return out.length ? out : chunks;
 }
 
 function rossoSplitItems(raw) {
