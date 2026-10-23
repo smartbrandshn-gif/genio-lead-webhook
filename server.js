@@ -1169,7 +1169,7 @@ function validateRosso(p) {
     if (!p.reserva_personas && p.cantidad_personas) p.reserva_personas = p.cantidad_personas;
     if (!p.reserva_personas) return "reserva_personas / cantidad_personas es requerido (número)";
     if (p.sucursal === "Pulhapanzac") {
-      // Reserva de cabaña: nombre, teléfono, correo, fecha entrada, fecha salida, personas
+      // Reserva de cabaña: nombre, teléfono, correo, fechas, cabaña, tipo, personas
       if (!(p.fecha_entrada || p.fecha_llegada)) return "fecha_entrada es requerida";
       if (!p.fecha_salida) return "fecha_salida es requerida";
       if (!p.correo_electronico || !String(p.correo_electronico).includes("@")) {
@@ -1179,8 +1179,17 @@ function validateRosso(p) {
       if (p.menor_de_5_anos !== "sí" && p.menor_de_5_anos !== "no") {
         return "niños menores es requerido: sí o no";
       }
-      p.reserva_fecha = `${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`;
-      if (!p.tipo_reserva) p.tipo_reserva = "cabaña";
+      if (!String(p.cabana_elegida || "").trim()) return "cabana_elegida es requerida";
+      // Fechas clásicas + tipo: llenar si vienen vacíos; nunca dejar vacíos en el payload hacia el email
+      const entrada = p.fecha_entrada || p.fecha_llegada;
+      const salida = p.fecha_salida;
+      if (!String(p.reserva_fecha || "").trim()) p.reserva_fecha = `${entrada} → ${salida}`;
+      if (!String(p.reserva_hora || "").trim()) p.reserva_hora = "entrada";
+      if (!String(p.tipo_reserva || "").trim()) p.tipo_reserva = "cabaña";
+      // total hablado → total_reserva del email
+      if ((!p.total_reserva || p.total_reserva === "Por confirmar con el equipo de reservas") && p.total != null && p.total !== "") {
+        p.total_reserva = String(p.total);
+      }
       if (!p.reserva_nombre) p.reserva_nombre = p.nombre;
       if (!p.notas && p.notas_cliente) p.notas = p.notas_cliente;
     } else {
@@ -1257,6 +1266,10 @@ function buildRossoEmail(p) {
       `Fecha de salida: ${salida}`,
       `Cantidad de noches: ${noches}`,
       `Cantidad de días: ${diasCal}`,
+      `Tipo de reserva: ${p.tipo_reserva || "cabaña"}`,
+      `Cabaña elegida: ${p.cabana_elegida || ""}`,
+      `Fecha reserva: ${p.reserva_fecha || `${entrada} → ${salida}`}`,
+      `Hora reserva: ${p.reserva_hora || "entrada"}`,
       `Cantidad de personas: ${personas}`,
       `niños menores: ${p.menor_de_5_anos}`,
       `Solicitud especial del cliente: ${String(p.notas_reserva || "").trim() ? p.notas_reserva : "Ninguno"}`,
@@ -1268,6 +1281,10 @@ function buildRossoEmail(p) {
       ["Correo electrónico", correo],
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
+      ["Tipo de reserva", p.tipo_reserva || "cabaña"],
+      ["Cabaña elegida", p.cabana_elegida || ""],
+      ["Fecha reserva", p.reserva_fecha || `${entrada} → ${salida}`],
+      ["Hora reserva", p.reserva_hora || "entrada"],
       ["Cantidad de noches", String(noches)],
       ["Cantidad de días", String(diasCal)],
       ["Cantidad de personas", String(personas)],
@@ -1305,6 +1322,10 @@ function buildRossoEmail(p) {
       ["Correo electrónico", correo],
       ["Fecha de entrada", entrada],
       ["Fecha de salida", salida],
+      ["Tipo de reserva", p.tipo_reserva || "cabaña"],
+      ["Cabaña elegida", p.cabana_elegida || ""],
+      ["Fecha reserva", p.reserva_fecha || `${entrada} → ${salida}`],
+      ["Hora reserva", p.reserva_hora || "entrada"],
       ["Cantidad de noches", String(nochesKv)],
       ["Cantidad de días", String(diasKv)],
       ["Cantidad de personas", String(personas)],
