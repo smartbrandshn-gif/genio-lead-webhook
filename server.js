@@ -1201,12 +1201,6 @@ function buildRossoEmail(p) {
   const ts = guatemalaTimestamp();
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
-  const subject = hasPedido
-    ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
-    : (p.sucursal === "Pulhapanzac"
-      ? `[Reserva PULHAPANZAK] ${p.nombre} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`
-      : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Manzano", "Mexcali"].includes(p.sucursal) ? (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal) : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
-  const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : null;
   if (mz) {
     p = { ...p, tipo_pedido: mz.tipo || p.tipo_pedido };
@@ -1214,6 +1208,22 @@ function buildRossoEmail(p) {
     if (!p.rtn_numero && mz.rtn) p.rtn_numero = mz.rtn;
     if (!p.rtn_nombre && mz.rtnNombre) p.rtn_nombre = mz.rtnNombre;
   }
+  let subject;
+  if (p.sucursal === "Manzano") {
+    // Exact subject labels requested for El Manzano only
+    if (!hasPedido) subject = "reserva";
+    else {
+      const tip = String(p.tipo_pedido || "").toLowerCase();
+      subject = /deliver|domicilio/.test(tip) ? "pedido delivery" : "pedido recoger";
+    }
+  } else {
+    subject = hasPedido
+      ? `[Pedido ${["Sonora", "Tuchi", "Bovinos", "Mexcali", "Pulhapanzac"].includes(p.sucursal) ? (p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : p.sucursal) : "Rosso " + p.sucursal}] ${p.nombre} - ${rossoMoney(p.total)}`
+      : (p.sucursal === "Pulhapanzac"
+        ? `[Reserva PULHAPANZAK] ${p.nombre} - ${p.cantidad_personas || p.reserva_personas} personas - ${p.fecha_entrada || p.fecha_llegada} → ${p.fecha_salida}`
+        : `[Reserva ${["Sonora", "Tuchi", "Bovinos", "Mexcali"].includes(p.sucursal) ? p.sucursal : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
+  }
+  const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mzExtra = mz ? [["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
   const pedidoBody = hasPedido ? (mz ? mz.items.join("\n") : formatPedidoCompleto(p.pedido)) : "";
   const lines = [
