@@ -1439,24 +1439,17 @@ const ROSSO_FIXED = {
   "pedido": { tipo: "pedido", tipo_pedido: "recoger" },
   "reserva": { tipo: "reserva" },
 };
-// Ruta neutra (sin "rosso"): /webhooks/pedido/:sucursal/:tipo — Manzano y futuros clientes
-app.post("/webhooks/pedido/:sucursal/:tipo", (req, res, next) => {
+function applyRossoTipoRoute(req, res) {
   const fx = ROSSO_FIXED[String(req.params.tipo).toLowerCase()];
-  if (!fx) return res.status(404).json({ ok: false, error: "ruta inválida" });
+  if (!fx) {
+    res.status(404).json({ ok: false, error: "ruta inválida" });
+    return false;
+  }
   req.body = { ...(req.body && typeof req.body === "object" ? req.body : {}), sucursal: req.params.sucursal, ...fx };
-  req.url = "/webhooks/pedido-rosso";
-  next("route");
-});
-// Legacy Rosso / otros clientes que aún apuntan a pedido-rosso
-app.post("/webhooks/pedido-rosso/:sucursal/:tipo", (req, res, next) => {
-  const fx = ROSSO_FIXED[String(req.params.tipo).toLowerCase()];
-  if (!fx) return res.status(404).json({ ok: false, error: "ruta inválida" });
-  req.body = { ...(req.body && typeof req.body === "object" ? req.body : {}), sucursal: req.params.sucursal, ...fx };
-  req.url = "/webhooks/pedido-rosso";
-  next("route");
-});
+  return true;
+}
 const ROSSO_RECENT = new Map();
-app.post("/webhooks/pedido-rosso", async (req, res) => {
+async function handleRossoPedido(req, res) {
   const auth = checkSecret(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
   const p = extractRosso(req);
@@ -1480,7 +1473,20 @@ app.post("/webhooks/pedido-rosso", async (req, res) => {
     console.error("[rosso] SMTP", e?.message || e);
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: e?.message || String(e) });
   }
+}
+
+// Ruta neutra (sin "rosso") — Manzano y futuros
+app.post("/webhooks/pedido/:sucursal/:tipo", (req, res) => {
+  if (!applyRossoTipoRoute(req, res)) return;
+  return handleRossoPedido(req, res);
 });
+// Legacy pedido-rosso
+app.post("/webhooks/pedido-rosso/:sucursal/:tipo", (req, res) => {
+  if (!applyRossoTipoRoute(req, res)) return;
+  return handleRossoPedido(req, res);
+});
+app.post("/webhooks/pedido-rosso", handleRossoPedido);
+app.post("/webhooks/pedido", handleRossoPedido);
 
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
 
