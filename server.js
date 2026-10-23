@@ -1028,6 +1028,8 @@ const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gm
 const PULHAPANZAC_RESERVA_TO_EMAIL = "sarmientod6@gmail.com, pulhahn@gmail.com, catarataspulhapanzak@gmail.com";
 const PULHAPANZAC_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_NOTA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
+const FINCAZUNA_TO_EMAIL = process.env.FINCAZUNA_TO_EMAIL || "sarmientod6@gmail.com";
+const FINCAZUNA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
@@ -1040,6 +1042,7 @@ function rossoSucursal(raw) {
   if (s.includes("tuchi")) return "Tuchi";
   if (s.includes("manzano")) return "Manzano";
   if (s.includes("pulhapanz") || s.includes("pulapanz")) return "Pulhapanzac";
+  if (s.includes("fincazuna") || s.includes("finca zuna") || s.includes("finca_zuna")) return "FincaZuna";
   return "";
 }
 function rossoBool(raw) {
@@ -1502,6 +1505,212 @@ app.post("/webhooks/pedido-rosso/:sucursal/nota", async (req, res) => {
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: e?.message || String(e) });
   }
 });
+
+
+/* ---------- Finca Zuna: reserva / cambio / cancelación ----------
+ * POST /webhooks/pedido-rosso/FincaZuna/reserva|cambio|cancelacion
+ * (también /webhooks/pedido/FincaZuna/...)
+ * Email estilo Manzano: From Genio Notificaciones, subject sin monto, franja verde solo fecha.
+ * Debe registrarse ANTES de la ruta :sucursal/:tipo (pedido|reserva|ambos).
+ */
+function extractFincaZuna(req) {
+  const m = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  const raw = (k) => (m[k] == null ? "" : typeof m[k] === "boolean" ? m[k] : String(m[k]).trim());
+  const mascotasRaw = raw("mascotas");
+  let mascotas = "";
+  if (mascotasRaw !== "") {
+    const s = String(mascotasRaw).trim().toLowerCase();
+    if (["si", "sí", "yes", "true", "1", "s"].includes(s) || mascotasRaw === true) mascotas = "sí";
+    else if (["no", "false", "0", "n"].includes(s) || mascotasRaw === false) mascotas = "no";
+    else mascotas = String(mascotasRaw);
+  }
+  const cantidad = (() => {
+    const n = parseInt(String(raw("cantidad_personas") || raw("reserva_personas")).replace(/\D/g, ""), 10);
+    return n > 0 ? n : null;
+  })();
+  return {
+    nombre: String(raw("nombre")),
+    telefono: rossoTelefono(raw("telefono")) || String(raw("telefono")),
+    telefono_confirmado: rossoBool(raw("telefono_confirmado")),
+    correo_electronico: String(raw("correo_electronico") || raw("correo") || raw("email")),
+    propiedad: String(raw("propiedad") || raw("villa") || raw("cabana") || raw("cabaña")),
+    fecha_entrada: String(raw("fecha_entrada") || raw("fecha_llegada")),
+    fecha_salida: String(raw("fecha_salida")),
+    cantidad_personas: cantidad,
+    mascotas,
+    notas: String(raw("notas") || raw("notas_cliente")),
+    detalle_cambio: String(raw("detalle_cambio") || raw("cambio")),
+    motivo: String(raw("motivo")),
+  };
+}
+
+function validateFincaZuna(p, tipo) {
+  if (!p.nombre || looksFake(p.nombre)) return "nombre es requerido";
+  const telDigits = String(p.telefono || "").replace(/\D/g, "");
+  if (!telDigits || telDigits.length < 7) return "telefono es requerido";
+  if (p.telefono_confirmado !== true) {
+    return "BLOQUEADO: telefono_confirmado debe ser true. Repita el teléfono al cliente en pares, espere que diga sí y vuelva a enviar con telefono_confirmado=true";
+  }
+  if (!p.correo_electronico || !String(p.correo_electronico).includes("@")) {
+    return "correo_electronico es requerido";
+  }
+  if (!p.propiedad || looksFake(p.propiedad)) return "propiedad es requerida";
+  if (!p.fecha_entrada) return "fecha_entrada es requerida";
+  if (!p.fecha_salida) return "fecha_salida es requerida";
+  if (tipo === "reserva" || tipo === "cambio") {
+    if (!p.cantidad_personas) return "cantidad_personas es requerido (número)";
+    if (p.mascotas !== "sí" && p.mascotas !== "no") return "mascotas es requerido: sí o no";
+  }
+  if (tipo === "cambio" && (!p.detalle_cambio || looksFake(p.detalle_cambio))) {
+    return "detalle_cambio es requerido";
+  }
+  if (tipo === "cancelacion" && (!p.motivo || looksFake(p.motivo))) {
+    return "motivo es requerido";
+  }
+  return "";
+}
+
+function buildFincaZunaEmail(p, tipo) {
+  const ts = guatemalaTimestamp();
+  const who = String(p.nombre || "").trim() || "cliente";
+  const titleMap = {
+    reserva: "Nueva reserva",
+    cambio: "Cambio de reserva",
+    cancelacion: "Cancelación",
+  };
+  const title = titleMap[tipo] || "Nueva reserva";
+  const subject = `${title}: ${who}`;
+  const telFmt = EMAIL_UI.fmtTel(p.telefono);
+  const lines = [
+    `${title} — Finca Zuna`,
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    `Nombre: ${p.nombre}`,
+    `Teléfono: ${p.telefono}`,
+    `Correo electrónico: ${p.correo_electronico}`,
+    `Propiedad: ${p.propiedad}`,
+    `Fecha de entrada: ${p.fecha_entrada}`,
+    `Fecha de salida: ${p.fecha_salida}`,
+  ];
+  const kv = [
+    ["Nombre", p.nombre],
+    ["Teléfono", telFmt],
+    ["Correo electrónico", p.correo_electronico],
+    ["Propiedad", p.propiedad],
+    ["Fecha de entrada", p.fecha_entrada],
+    ["Fecha de salida", p.fecha_salida],
+  ];
+  if (tipo === "reserva" || tipo === "cambio") {
+    lines.push(`Cantidad de personas: ${p.cantidad_personas}`, `Mascotas: ${p.mascotas}`);
+    kv.push(["Cantidad de personas", String(p.cantidad_personas)], ["Mascotas", p.mascotas]);
+  }
+  if (tipo === "cambio") {
+    lines.push(`Detalle del cambio: ${p.detalle_cambio}`);
+    kv.push(["Detalle del cambio", p.detalle_cambio]);
+  }
+  if (tipo === "cancelacion") {
+    lines.push(`Motivo: ${p.motivo}`);
+    kv.push(["Motivo", p.motivo]);
+  }
+  const notas = String(p.notas || "").trim();
+  lines.push(`Notas: ${notas || "Ninguna"}`);
+  kv.push(["Notas", notas || "Ninguna"]);
+
+  const { kvTable, card } = EMAIL_UI;
+  const cardTitle =
+    tipo === "cambio" ? "Cambio de reserva — Finca Zuna"
+    : tipo === "cancelacion" ? "Cancelación — Finca Zuna"
+    : "Reserva — Finca Zuna";
+  const cards = [card(cardTitle, kvTable(kv))];
+  const html = EMAIL_UI.shell(ts, "", cards); // franja verde: solo fecha/hora
+  return { subject, text: lines.join("\n"), html };
+}
+
+const FINCAZUNA_RECENT = new Map();
+async function handleFincaZuna(req, res, tipoForced) {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const sucursal = rossoSucursal(req.params.sucursal || "FincaZuna");
+  if (sucursal !== "FincaZuna") {
+    return res.status(404).json({ ok: false, error: "ruta Finca Zuna inválida" });
+  }
+
+  const tipoRaw = String(tipoForced || req.params.tipo || "").toLowerCase();
+  const tipo =
+    tipoRaw.includes("cancel") ? "cancelacion"
+    : tipoRaw.includes("cambi") ? "cambio"
+    : tipoRaw.includes("reserv") ? "reserva"
+    : "";
+  if (!tipo) {
+    return res.status(404).json({ ok: false, error: "tipo inválido: reserva|cambio|cancelacion" });
+  }
+
+  const p = extractFincaZuna(req);
+  console.log(`[fincazuna-${tipo}] inbound`, p);
+  const err = validateFincaZuna(p, tipo);
+  if (err) return res.status(400).json({ ok: false, error: err });
+
+  const dupKey = [
+    "FincaZuna",
+    tipo,
+    String(p.telefono).replace(/\D/g, ""),
+    p.propiedad,
+    p.fecha_entrada,
+    p.fecha_salida,
+    p.detalle_cambio || "",
+    p.motivo || "",
+  ].join("|").toLowerCase();
+  const now = Date.now();
+  for (const [k, t] of FINCAZUNA_RECENT) if (now - t > 10 * 60 * 1000) FINCAZUNA_RECENT.delete(k);
+  if (FINCAZUNA_RECENT.has(dupKey)) {
+    return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
+  }
+
+  if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+    return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+  }
+
+  const email = buildFincaZunaEmail(p, tipo);
+  const toEmail = FINCAZUNA_TO_EMAIL;
+  if (process.env.FINCAZUNA_DRY_RUN === "1" || process.env.ROSSO_DRY_RUN === "1") {
+    return res.json({ ok: true, dryRun: true, to: toEmail, tipo, ...email });
+  }
+  try {
+    const info = await createTransport().sendMail({
+      from: FINCAZUNA_FROM,
+      to: toEmail,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    });
+    FINCAZUNA_RECENT.set(dupKey, Date.now());
+    console.log(`[fincazuna-${tipo}] enviado a ${toEmail} id=${info.messageId}`);
+    const msg =
+      tipo === "cambio" ? "Cambio enviado"
+      : tipo === "cancelacion" ? "Cancelación enviada"
+      : "Reserva enviada";
+    return res.json({ ok: true, message: msg, tipo, sucursal: "FincaZuna", messageId: info.messageId, to: toEmail });
+  } catch (e) {
+    console.error(`[fincazuna-${tipo}] SMTP`, e?.message || e);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: e?.message || String(e) });
+  }
+}
+
+function fincaZunaRoute(tipo) {
+  return (req, res, next) => {
+    const suc = rossoSucursal(req.params.sucursal);
+    if (suc === "FincaZuna") return handleFincaZuna(req, res, tipo);
+    if (tipo === "reserva") return next(); // otros clientes: ruta Rosso :tipo
+    return res.status(404).json({ ok: false, error: "cambio/cancelacion solo disponible para FincaZuna" });
+  };
+}
+app.post("/webhooks/pedido-rosso/:sucursal/cambio", fincaZunaRoute("cambio"));
+app.post("/webhooks/pedido-rosso/:sucursal/cancelacion", fincaZunaRoute("cancelacion"));
+app.post("/webhooks/pedido/:sucursal/cambio", fincaZunaRoute("cambio"));
+app.post("/webhooks/pedido/:sucursal/cancelacion", fincaZunaRoute("cancelacion"));
+app.post("/webhooks/pedido-rosso/:sucursal/reserva", fincaZunaRoute("reserva"));
+app.post("/webhooks/pedido/:sucursal/reserva", fincaZunaRoute("reserva"));
 
 const ROSSO_FIXED = {
   "ambos": { tipo: "ambos", tipo_pedido: "comer en el restaurante" },
