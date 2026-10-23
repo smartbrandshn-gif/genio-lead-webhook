@@ -676,6 +676,32 @@ async function handleLead(req, res) {
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
   }
 }
+// Calculadora: suma precios para agentes de voz (sin email)
+function handleCalcularTotal(req, res) {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+  const b = req.body || {};
+  console.log("[calcular] inbound", JSON.stringify(b).slice(0, 300));
+  let nums = null;
+  const list = b.precios ?? b.sumandos ?? b.numbers ?? b.valores;
+  if (list !== undefined && list !== null && list !== "") {
+    const arr = Array.isArray(list) ? list : String(list).split(",");
+    nums = arr.map((x) => (typeof x === "number" ? x : Number(String(x).trim().replace(/^Q/i, ""))));
+  } else if (typeof b.expresion === "string" && b.expresion.trim()) {
+    const e = b.expresion.replace(/\s+/g, "");
+    if (!/^\d+(\.\d+)?(\+\d+(\.\d+)?)*$/.test(e)) {
+      return res.status(400).json({ ok: false, error: "expresion inválida: solo números y +" });
+    }
+    nums = e.split("+").map(Number);
+  }
+  if (!nums || !nums.length) return res.status(400).json({ ok: false, error: "Enviar precios (array o lista separada por comas) o expresion" });
+  if (nums.some((n) => !Number.isFinite(n))) return res.status(400).json({ ok: false, error: "Valores no numéricos" });
+  const total = Math.round(nums.reduce((a, n) => a + n, 0) * 100) / 100;
+  return res.json({ ok: true, total: Number(total) });
+}
+app.post("/webhooks/calcular-total", handleCalcularTotal);
+app.post("/webhooks/calcular", handleCalcularTotal);
+
 app.post("/webhooks/enviar-lead", handleLead);
 app.post("/webhooks/lead", handleLead);
 
