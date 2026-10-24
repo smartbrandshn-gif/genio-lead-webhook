@@ -688,11 +688,14 @@ function handleCalcularTotal(req, res) {
     const arr = Array.isArray(list) ? list : String(list).split(",");
     nums = arr.map((x) => (typeof x === "number" ? x : Number(String(x).trim().replace(/^Q/i, ""))));
   } else if (typeof b.expresion === "string" && b.expresion.trim()) {
-    const e = b.expresion.replace(/\s+/g, "");
-    if (!/^\d+(\.\d+)?(\+\d+(\.\d+)?)*$/.test(e)) {
-      return res.status(400).json({ ok: false, error: "expresion inválida: solo números y +" });
+    // Acepta sumas y multiplicaciones por cantidad: "1380*2+816.50", "2x1380", "2×1380"; comas de miles ignoradas
+    const e = b.expresion.replace(/\s+/g, "").replace(/[x×X]/g, "*").replace(/,(?=\d{3}(\D|$))/g, "").replace(/^L(?=\d)|(?<=[+*])L(?=\d)/gi, "");
+    const num = "\\d+(\\.\\d+)?";
+    const term = `${num}(\\*${num})*`;
+    if (!new RegExp(`^${term}(\\+${term})*$`).test(e)) {
+      return res.status(400).json({ ok: false, error: "expresion inválida: solo números, + y * (cantidad*precio)" });
     }
-    nums = e.split("+").map(Number);
+    nums = e.split("+").map((t) => t.split("*").map(Number).reduce((a, n) => a * n, 1));
   }
   if (!nums || !nums.length) return res.status(400).json({ ok: false, error: "Enviar precios (array o lista separada por comas) o expresion" });
   if (nums.some((n) => !Number.isFinite(n))) return res.status(400).json({ ok: false, error: "Valores no numéricos" });
