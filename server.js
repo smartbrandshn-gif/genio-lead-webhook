@@ -683,19 +683,29 @@ function handleCalcularTotal(req, res) {
   const b = req.body || {};
   console.log("[calcular] inbound", JSON.stringify(b).slice(0, 300));
   let nums = null;
+  // Evalúa "cantidad*precio" (x, ×), quita espacios, L y comas de miles. Devuelve NaN si no es válido.
+  const evalTerm = (raw) => {
+    if (typeof raw === "number") return raw;
+    const t = String(raw).replace(/\s+/g, "").replace(/[x×X]/g, "*").replace(/(^|\*)[LQ](?=\d)/gi, "$1");
+    if (!/^\d+(\.\d+)?(\*\d+(\.\d+)?)*$/.test(t)) return NaN;
+    return t.split("*").map(Number).reduce((a, n) => a * n, 1);
+  };
+  // Coma pegada entre dígitos con 3 dígitos después (ej. 1,380) es ambigua (miles o separador): se rechaza para que el agente reintente sin comas.
+  const ambiguousComma = (str) => /\d,\d{3}(?!\d)/.test(String(str));
+  const splitSum = (str) => String(str).replace(/\s+/g, "").split(/[+,;]/).filter((x) => x !== "");
   const list = b.precios ?? b.sumandos ?? b.numbers ?? b.valores;
+  const rawInput = list !== undefined && list !== null && list !== "" ? list : b.expresion;
+  if ((Array.isArray(rawInput) ? rawInput : [rawInput]).some((x) => typeof x === "string" && ambiguousComma(x))) {
+    return res.status(400).json({ ok: false, error: "No usar comas de miles: escribir los precios sin comas, ej. 1380*2+816.50" });
+  }
   if (list !== undefined && list !== null && list !== "") {
-    const arr = Array.isArray(list) ? list : String(list).split(",");
-    nums = arr.map((x) => (typeof x === "number" ? x : Number(String(x).trim().replace(/^Q/i, ""))));
+    const arr = Array.isArray(list) ? list.flatMap((x) => (typeof x === "number" ? [x] : splitSum(x))) : splitSum(list);
+    nums = arr.map(evalTerm);
   } else if (typeof b.expresion === "string" && b.expresion.trim()) {
-    // Acepta sumas y multiplicaciones por cantidad: "1380*2+816.50", "2x1380", "2×1380"; comas de miles ignoradas
-    const e = b.expresion.replace(/\s+/g, "").replace(/[x×X]/g, "*").replace(/,(?=\d{3}(\D|$))/g, "").replace(/^L(?=\d)|(?<=[+*])L(?=\d)/gi, "");
-    const num = "\\d+(\\.\\d+)?";
-    const term = `${num}(\\*${num})*`;
-    if (!new RegExp(`^${term}(\\+${term})*$`).test(e)) {
-      return res.status(400).json({ ok: false, error: "expresion inválida: solo números, + y * (cantidad*precio)" });
-    }
-    nums = e.split("+").map((t) => t.split("*").map(Number).reduce((a, n) => a * n, 1));
+    nums = splitSum(b.expresion).map(evalTerm);
+  }
+  if (nums && nums.some((n) => !Number.isFinite(n))) {
+    return res.status(400).json({ ok: false, error: "expresion inválida: usar solo cantidad*precio unidos con +" });
   }
   if (!nums || !nums.length) return res.status(400).json({ ok: false, error: "Enviar precios (array o lista separada por comas) o expresion" });
   if (nums.some((n) => !Number.isFinite(n))) return res.status(400).json({ ok: false, error: "Valores no numéricos" });
