@@ -1142,6 +1142,8 @@ function extractRosso(req) {
     rtn_numero: String(raw("rtn_numero")),
     rtn_nombre: String(raw("rtn_nombre")),
     // Solo El Manzano (opcional): comentario del cliente (aliases comentario / comentarios)
+    // Solo El Manzano (opcional): evento privado (aliases tipo_de_evento / evento)
+    tipo_evento: String(raw("tipo_evento") || raw("tipo_de_evento") || raw("evento")),
     comentario_cliente: normComentarioCliente(raw("comentario_cliente") || raw("comentario") || raw("comentarios")),
     ...(() => {
       let notas = String(raw("notas_cliente") || raw("notas"));
@@ -1202,7 +1204,25 @@ function extractRosso(req) {
   };
 }
 
+// El Manzano: reserva con tipo_evento → email de evento privado
+const isManzanoEvento = (p) => p.sucursal === "Manzano" && p.tipo === "reserva" && String(p.tipo_evento || "").trim() !== "";
+
+function validateManzanoEvento(p) {
+  if (!String(p.reserva_nombre || "").trim() && String(p.nombre || "").trim()) p.reserva_nombre = p.nombre;
+  if (!String(p.nombre || "").trim() && String(p.reserva_nombre || "").trim()) p.nombre = p.reserva_nombre;
+  if (!p.nombre || looksFake(p.nombre)) return "Evento: nombre es requerido (nombre de quien reserva el evento)";
+  if (!p.telefono) return "Evento: telefono es requerido: 8 dígitos sin 504";
+  if (p.telefono_confirmado !== true) return "BLOQUEADO: telefono_confirmado debe ser true. Repita el teléfono al cliente en pares, espere que diga sí y vuelva a enviar con telefono_confirmado=true";
+  if (!String(p.tipo_evento || "").trim()) return "Evento: tipo_evento es requerido (ej. cumpleaños, boda, reunión empresarial)";
+  if (!String(p.reserva_fecha || "").trim()) return "Evento: reserva_fecha es requerida (fecha del evento)";
+  if (!String(p.reserva_hora || "").trim()) return "Evento: reserva_hora es requerida (hora del evento)";
+  if (!p.reserva_personas && p.cantidad_personas) p.reserva_personas = p.cantidad_personas;
+  if (!p.reserva_personas) return "Evento: reserva_personas / cantidad_personas es requerido (número de personas, sin límite máximo)";
+  return "";
+}
+
 function validateRosso(p) {
+  if (isManzanoEvento(p)) return validateManzanoEvento(p);
   if (!p.tipo) return "tipo inválido: usa 'pedido', 'reserva' o 'ambos'";
   if (!p.sucursal) return "sucursal es requerida: 'Foresta' o 'Proceres'";
   if (!p.nombre || looksFake(p.nombre)) return "nombre es requerido";
@@ -1250,7 +1270,26 @@ function validateRosso(p) {
   return "";
 }
 
+function buildManzanoEventoEmail(p) {
+  const ts = guatemalaTimestamp();
+  const nombre = String(p.reserva_nombre || p.nombre || "").trim() || "cliente";
+  const personas = String(p.reserva_personas || p.cantidad_personas || "");
+  const rows = [
+    ["Nombre", nombre],
+    ["Teléfono", EMAIL_UI.fmtTel(p.telefono)],
+    ["Tipo de evento", String(p.tipo_evento).trim()],
+    ["Fecha", p.reserva_fecha],
+    ["Hora", p.reserva_hora],
+    ["Cantidad de personas", personas],
+  ];
+  const subject = `Nuevo evento: ${nombre}`;
+  const text = ["Nueva reserva de evento — El Manzano", "", `Fecha (America/Guatemala): ${ts}`, "", "RESERVA DE EVENTO", ...rows.map(([k, v]) => `${k}: ${v}`)].join("\n");
+  const html = EMAIL_UI.shell(ts, "", [EMAIL_UI.card("Nueva reserva de evento", EMAIL_UI.kvTable(rows))]); // franja verde: solo fecha/hora (diseño Manzano)
+  return { subject, text, html };
+}
+
 function buildRossoEmail(p) {
+  if (isManzanoEvento(p)) return buildManzanoEventoEmail(p);
   p = { ...p };
   const ts = guatemalaTimestamp();
   const hasPedido = p.tipo !== "reserva";
