@@ -1315,6 +1315,12 @@ function buildRossoEmail(p) {
   }
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
   const mzExtra = mz ? [["Comentario del cliente", normComentarioCliente(p.comentario_cliente)], ["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
+  // Solo El Manzano: platos de precio de temporada (Langosta, Caracol) no entran en el total
+  const totalStr = hasPedido
+    ? (mz && /precio de temporada/i.test(String(p.pedido || ""))
+      ? (p.total ? `${rossoMoney(p.total)} + precio de temporada (lo confirma el restaurante)` : "Precio de temporada (lo confirma el restaurante)")
+      : rossoMoney(p.total))
+    : "";
   const pedidoBody = hasPedido ? (mz ? mz.items.join("\n") : formatPedidoCompleto(p.pedido)) : "";
   const lines = [
     `${title} — ${rossoBrand(p)} (${p.sucursal})`,
@@ -1327,8 +1333,8 @@ function buildRossoEmail(p) {
   const rows = [["Sucursal", p.sucursal], ["Cliente", p.nombre], ["Teléfono", p.telefono]];
   const pedRows = [];
   if (hasPedido) {
-    lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, ...mzExtra.map(([k, v]) => `${k}: ${v}`), `Total: ${rossoMoney(p.total)}`);
-    pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", rossoMoney(p.total)]);
+    lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, ...mzExtra.map(([k, v]) => `${k}: ${v}`), `Total: ${totalStr}`);
+    pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", totalStr]);
   }
   const resRows = [];
   const isPulhaReserva = hasReserva && p.sucursal === "Pulhapanzac";
@@ -1389,7 +1395,7 @@ function buildRossoEmail(p) {
   const items = mz ? mz.items : rossoSplitItems(p.pedido);
   const telFmt = p.telefono.length === 8 ? `${p.telefono.slice(0, 4)}-${p.telefono.slice(4)}` : p.telefono;
   const { kvTable, card } = EMAIL_UI;
-  const itemsTable = EMAIL_UI.itemsTable(items, hasPedido ? rossoMoney(p.total) : "", mzExtra);
+  const itemsTable = EMAIL_UI.itemsTable(items, totalStr, mzExtra);
   const cards = [];
   if (!(hasReserva && isPulhaReserva && !hasPedido)) {
     cards.push(card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]])));
