@@ -1119,6 +1119,12 @@ function rossoMoney(n) {
   return `${Number.isInteger(n) ? n : n.toFixed(2)} lempiras`;
 }
 
+// Vacío, "no", "ninguno", "ninguna" → "Ninguno"
+function normComentarioCliente(v) {
+  const t = v == null ? "" : String(v).trim();
+  return !t || /^(no|ninguno|ninguna)\.?$/i.test(t) ? "Ninguno" : t;
+}
+
 function extractRosso(req) {
   const m = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
   const raw = (k) => (m[k] == null ? "" : typeof m[k] === "boolean" ? m[k] : String(m[k]).trim());
@@ -1135,6 +1141,8 @@ function extractRosso(req) {
     telefono_confirmado: rossoBool(raw("telefono_confirmado")),
     rtn_numero: String(raw("rtn_numero")),
     rtn_nombre: String(raw("rtn_nombre")),
+    // Solo El Manzano (opcional): comentario del cliente (aliases comentario / comentarios)
+    comentario_cliente: normComentarioCliente(raw("comentario_cliente") || raw("comentario") || raw("comentarios")),
     ...(() => {
       let notas = String(raw("notas_cliente") || raw("notas"));
       let pago = String(raw("metodo_pago"));
@@ -1267,7 +1275,7 @@ function buildRossoEmail(p) {
         : `[Reserva ${["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso " + p.sucursal}] ${p.reserva_nombre} - ${p.reserva_personas} personas - ${p.reserva_fecha} ${p.reserva_hora}`);
   }
   const title = hasPedido && hasReserva ? "Nuevo pedido y reserva" : hasPedido ? "Nuevo pedido" : "Nueva reserva";
-  const mzExtra = mz ? [["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
+  const mzExtra = mz ? [["Comentario del cliente", normComentarioCliente(p.comentario_cliente)], ["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
   const pedidoBody = hasPedido ? (mz ? mz.items.join("\n") : formatPedidoCompleto(p.pedido)) : "";
   const lines = [
     `${title} — ${rossoBrand(p)} (${p.sucursal})`,
