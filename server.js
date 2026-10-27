@@ -472,24 +472,10 @@ const EMAIL_UI = (() => {
   return { kv, kvTable, card, itemsTable, notasCard, shell, fmtTel };
 })();
 
-// Solo Wangs: detalle agrupado estilo Manzano. Cada línea sin guion = encabezado del plato
-// (ej. «1 Solo 18»); líneas con -, •, *, · = opciones de ese plato → «• …» (sangría).
-// No se parte por comas ni « y » (así «Aderezos: 2 Ranch, 1 Blue Cheese» queda en una sola línea).
-// Si el pedido viene en un solo párrafo (sin saltos de línea), se usa el split anterior.
-function wangsDetalleItems(body) {
-  const lines = String(body || "").split("\n").map((l) => l.trim()).filter(Boolean);
-  if (lines.length < 2) return rossoSplitItems(body);
-  return lines.map((l) => {
-    const m = l.match(/^[-–•*·]\s*(.*)$/);
-    return m ? `• ${m[1].trim()}` : l;
-  }).filter((l) => l !== "•");
-}
-
 function buildPedidoEmail(pedido) {
   const ts = guatemalaTimestamp();
   const subject = `Nuevo pedido: ${pedido.nombre_cliente}`;
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
-  const detalleItems = wangsDetalleItems(pedidoBody);
   const numeroCliente = pedido.caller_id || "no";
   const text = [
     "Nuevo pedido — Wangs",
@@ -497,7 +483,7 @@ function buildPedidoEmail(pedido) {
     `Fecha (America/Guatemala): ${ts}`,
     `Cliente: ${pedido.nombre_cliente}`,
     "Pedido:",
-    detalleItems.map((l, i) => (l.startsWith("• ") ? `   ${l}` : (i ? `\n${l}` : l))).join("\n"),
+    pedidoBody,
     `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
     `Total: ${pedido.total_pedido}`,
     `Método de pago: ${pedido.metodo_pago}`,
@@ -507,7 +493,7 @@ function buildPedidoEmail(pedido) {
   const { kvTable, card } = EMAIL_UI;
   const cards = [
     card("Cliente", kvTable([["Nombre", pedido.nombre_cliente], ["Teléfono", EMAIL_UI.fmtTel(numeroCliente)]])),
-    card("Pedido", kvTable([["Método de pago", pedido.metodo_pago]]) + EMAIL_UI.itemsTable(detalleItems, String(pedido.total_pedido))),
+    card("Pedido", kvTable([["Método de pago", pedido.metodo_pago]]) + EMAIL_UI.itemsTable(rossoSplitItems(pedidoBody), String(pedido.total_pedido))),
     card("Factura", kvTable([["RTN", pedido.rtn]])),
   ];
   if (pedido.notas) cards.push(EMAIL_UI.notasCard(pedido.notas));
