@@ -1,6 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import nodemailer from "nodemailer";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT || 10000);
 const LEAD_WEBHOOK_SECRET = process.env.LEAD_WEBHOOK_SECRET || "";
@@ -636,6 +639,19 @@ function buildCancelPedidoEmailFor(business, pedido) {
 }
 
 function createTransport() {
+  // Solo pruebas locales: MAIL_DRY_RUN=1 no envía nada; guarda cada mensaje (JSON, adjuntos en base64) en MAIL_DRY_RUN_DIR.
+  if (process.env.MAIL_DRY_RUN === "1") {
+    const json = nodemailer.createTransport({ jsonTransport: true });
+    const dir = process.env.MAIL_DRY_RUN_DIR || "./.mail-dry-run";
+    return {
+      sendMail: async (msg) => {
+        const info = await json.sendMail(msg);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`), info.message);
+        return { messageId: `dry-run-${Date.now()}` };
+      },
+    };
+  }
   return nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
@@ -1883,6 +1899,132 @@ app.post("/webhooks/pedido-rosso/:sucursal/:tipo", (req, res) => {
 });
 app.post("/webhooks/pedido-rosso", handleRossoPedido);
 app.post("/webhooks/pedido", handleRossoPedido);
+
+/* ---------- Prosperity Partners (demo Marcela Morales / Regina): hoja de reclamos de gastos ----------
+ * POST /webhooks/prosperity/hoja-reclamos  (header X-Lead-Secret)
+ * Body: nombre (string), correo (string, admite forma hablada «juan arroba gmail punto com»), telefono (opcional).
+ * Envía el PDF adjunto al correo del que llama + aviso de copia a PROSPERITY_COPY_EMAIL.
+ */
+const PROSPERITY_COPY_EMAIL = process.env.PROSPERITY_COPY_EMAIL || "sarmientod6@gmail.com";
+const PROSPERITY_FROM = `"Prosperity Partners" <${DEMO_FROM_EMAIL}>`;
+const PROSPERITY_PDF_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "prosperity", "hoja-reclamos-gastos.pdf");
+const PROSPERITY_PDF_FILENAME = "Hoja-de-reclamos-de-gastos-Prosperity-Partners.pdf";
+const PROSPERITY_SUBJECT = "Hoja de reclamos de gastos – Prosperity Partners";
+const EMAIL_STRICT_RE = /^[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$/;
+
+/** Devuelve { ok, correo } normalizado, o { ok:false }. Un solo destinatario; sin comas/;/saltos de línea (anti inyección de CC). */
+function normalizeCorreoHablado(raw) {
+  const original = String(raw ?? "");
+  if (!original.trim() || original.length > 200) return { ok: false };
+  if (/[,;<>"'\\()\[\]:\r\n\t]/.test(original)) return { ok: false };
+  let s = original.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  s = s
+    .replace(/\b(?:guion|gui[oó]n)\s+bajo\b|\bunderscore\b/g, "_")
+    .replace(/\bguion\b/g, "-")
+    .replace(/\barroba\b/g, "@")
+    .replace(/\b(?:punto|dot)\b/g, ".")
+    .replace(/\s+/g, "")
+    .replace(/\.+$/, "");
+  if (s.length > 254 || s.includes("..") || s.split("@").length !== 2) return { ok: false };
+  const [local] = s.split("@");
+  if (local.endsWith(".") || !EMAIL_STRICT_RE.test(s)) return { ok: false };
+  return { ok: true, correo: s };
+}
+
+function buildHojaReclamosEmail(nombre) {
+  const { card, shell } = EMAIL_UI;
+  const F = "font-family:Arial,Helvetica,sans-serif;";
+  const p = (t) => `<div style="${F}font-size:14px;color:#111827;line-height:1.6;padding:6px 0">${t}</div>`;
+  const body = [
+    p(`Hola ${escHtml(nombre)},`),
+    p("Con gusto te enviamos adjunta la <b>hoja de reclamos de gastos</b>, tal como lo conversaste con Regina, la asistente de Marcela Morales."),
+    p("Complétala con los datos del asegurado, la póliza y el detalle de los gastos, fírmala y adjunta las facturas o comprobantes correspondientes."),
+    p("Si tienes dudas, Marcela y su equipo con gusto te ayudan."),
+    p("Saludos,<br><b>Prosperity Partners</b>"),
+  ].join("");
+  const html = shell("Hoja de reclamos de gastos", "Prosperity Partners", [card("Tu documento", body)]);
+  const text = [
+    `Hola ${nombre},`,
+    "",
+    "Con gusto te enviamos adjunta la hoja de reclamos de gastos, tal como lo conversaste con Regina, la asistente de Marcela Morales.",
+    "Complétala con los datos del asegurado, la póliza y el detalle de los gastos, fírmala y adjunta las facturas o comprobantes correspondientes.",
+    "Si tienes dudas, Marcela y su equipo con gusto te ayudan.",
+    "",
+    "Saludos,",
+    "Prosperity Partners",
+  ].join("\n");
+  return { subject: PROSPERITY_SUBJECT, text, html };
+}
+
+function buildHojaReclamosCopyEmail({ nombre, correo, telefono }) {
+  const ts = guatemalaTimestamp();
+  const { kvTable, card, shell, fmtTel } = EMAIL_UI;
+  const rows = [["Nombre", nombre], ["Correo", correo], ["Teléfono", telefono ? fmtTel(telefono) : "(no indicado)"], ["Documento", PROSPERITY_PDF_FILENAME]];
+  const html = shell(ts, "", [card("Hoja de reclamos enviada", kvTable(rows))]);
+  const text = [
+    "Hoja de reclamos enviada — Prosperity Partners (demo Marcela Morales)",
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+  ].join("\n");
+  return { subject: `Copia: hoja de reclamos enviada a ${nombre}`, text, html };
+}
+
+app.post("/webhooks/prosperity/hoja-reclamos", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  delete merged.secret;
+  const nombre = pick(merged, ["nombre", "name"]).replace(/\s+/g, " ").replace(/[<>]/g, "").slice(0, 80).trim();
+  const telefono = pick(merged, ["telefono", "telefono_whatsapp", "phone"]).replace(/[^\d+\-() ]/g, "").slice(0, 25).trim();
+  const correoRaw = pick(merged, ["correo", "email", "correo_electronico"]);
+  console.log("[prosperity-hoja] inbound", { bodyKeys: Object.keys(req.body || {}), nombreLen: nombre.length, tieneCorreo: Boolean(correoRaw) });
+
+  if (!nombre) {
+    return res.status(400).json({ ok: false, error: "nombre_requerido", mensaje: "Falta el nombre de la persona; pídeselo e inténtalo de nuevo." });
+  }
+  const norm = normalizeCorreoHablado(correoRaw);
+  if (!norm.ok) {
+    return res.status(400).json({ ok: false, error: "correo_invalido", mensaje: "El correo no es válido; pídele a la persona que lo repita letra por letra (un solo correo)." });
+  }
+  const correo = norm.correo;
+
+  let pdf;
+  try {
+    pdf = fs.readFileSync(PROSPERITY_PDF_PATH);
+  } catch (err) {
+    console.error("[prosperity-hoja] PDF no disponible", err?.message || err);
+    return res.status(500).json({ ok: false, error: "pdf_no_disponible" });
+  }
+
+  try {
+    const transport = createTransport();
+    const { subject, text, html } = buildHojaReclamosEmail(nombre);
+    const info = await transport.sendMail({
+      from: PROSPERITY_FROM,
+      to: correo,
+      subject,
+      text,
+      html,
+      attachments: [{ filename: PROSPERITY_PDF_FILENAME, content: pdf, contentType: "application/pdf" }],
+    });
+    console.log(`[prosperity-hoja] enviado id=${info.messageId}`);
+    // Aviso de copia a Daniel: si falla no afecta la respuesta al agente
+    if (PROSPERITY_COPY_EMAIL && PROSPERITY_COPY_EMAIL.toLowerCase() !== correo) {
+      try {
+        const c = buildHojaReclamosCopyEmail({ nombre, correo, telefono });
+        await transport.sendMail({ from: GENIO_NOTIFICACIONES_FROM, to: PROSPERITY_COPY_EMAIL, subject: c.subject, text: c.text, html: c.html });
+      } catch (e) {
+        console.error("[prosperity-hoja] copia falló", e?.message || e);
+      }
+    }
+    return res.json({ ok: true, mensaje: `Hoja enviada a ${correo}` });
+  } catch (err) {
+    console.error("[prosperity-hoja] SMTP", err?.message || err);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+  }
+});
 
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
 

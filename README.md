@@ -32,3 +32,9 @@ Cancelar Mexcali: `POST /webhooks/mexcali/cancelar-pedido` con header `X-Lead-Se
 ### Rosso Napoletano
 `POST /webhooks/pedido-rosso` (header `X-Lead-Secret`). `tipo`: `pedido` (default) | `reserva` | `ambos`. Siempre: `sucursal` (Foresta/Proceres), `nombre`, `telefono` (8 dígitos). Pedido: `tipo_pedido`, `pedido`, `total`, `necesita_rtn` (+ `rtn_numero`, `rtn_nombre` si true). Reserva: `reserva_nombre`, `reserva_personas`, `reserva_fecha`, `reserva_hora`. `notas` opcional.
 Env: `ROSSO_FORESTA_TO_EMAIL`, `ROSSO_PROCERES_TO_EMAIL` (default `sarmientod6@gmail.com`). From: `"Rosso Napoletano Pedidos" <genionotificaciones@gmail.com>`.
+
+### Prosperity Partners — hoja de reclamos (demo Marcela Morales / Regina)
+`POST /webhooks/prosperity/hoja-reclamos` (header `X-Lead-Secret`). Body JSON: `nombre` (string, requerido), `correo` (string, requerido; acepta forma hablada «juan arroba gmail punto com»), `telefono` (opcional).
+Envía `assets/prosperity/hoja-reclamos-gastos.pdf` adjunto a `correo` (asunto «Hoja de reclamos de gastos – Prosperity Partners», From `"Prosperity Partners" <genionotificaciones@gmail.com>`) y un aviso de copia a `PROSPERITY_COPY_EMAIL` (default `sarmientod6@gmail.com`).
+Respuestas: `{ok:true, mensaje:"Hoja enviada a <correo>"}` · 400 `{ok:false, error:"correo_invalido"|"nombre_requerido"}` · 401 secreto inválido.
+Pruebas locales sin enviar: `MAIL_DRY_RUN=1 MAIL_DRY_RUN_DIR=./.mail-dry-run node server.js` (guarda cada mensaje como JSON).
