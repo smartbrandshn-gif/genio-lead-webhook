@@ -291,6 +291,16 @@ function extractPedido(req) {
   let notas = pick(merged, ["notas", "notes"]);
   // Optional: empty / omit / "sin notas" → treat as empty
   if (!notas || /sin\s+notas/i.test(notas) || looksFake(notas)) notas = "";
+  // Opcional (solo email Wangs): p. ej. "salsa aparte". Vacío / falso / "sin comentario" → "".
+  let comentario_cocina = pick(merged, ["comentario_cocina", "comentario_para_cocina", "nota_cocina"]);
+  comentario_cocina = String(comentario_cocina || "").replace(/\s+/g, " ").trim();
+  if (
+    !comentario_cocina ||
+    looksFake(comentario_cocina) ||
+    /^(sin|ning[uú]n[ao]?|no\s+(hay|aplica|tiene))\b.{0,20}$/i.test(comentario_cocina) ||
+    /^(n\/?a|ninguno|ninguna|no|null|undefined)$/i.test(comentario_cocina)
+  ) comentario_cocina = "";
+  else if (comentario_cocina.length > 300) comentario_cocina = comentario_cocina.slice(0, 300).trim();
   const total_pedido = pick(merged, ["total_pedido", "total", "total_del_pedido"]);
   const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
   const rtnRaw = pick(merged, ["rtn", "RTN", "factura_rtn"]);
@@ -300,6 +310,7 @@ function extractPedido(req) {
     nombre_cliente,
     pedido_completo,
     notas,
+    comentario_cocina,
     total_pedido,
     metodo_pago: normalizePago(pagoRaw),
     rtn: normalizeRtn(rtnRaw),
@@ -498,6 +509,7 @@ function buildPedidoEmail(pedido) {
     `Cliente: ${pedido.nombre_cliente}`,
     "Pedido:",
     detalleItems.map((l, i) => (l.startsWith("• ") ? `   ${l}` : (i ? `\n${l}` : l))).join("\n"),
+    ...(pedido.comentario_cocina ? [`Comentario para cocina: ${pedido.comentario_cocina}`] : []),
     `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
     `Total: ${pedido.total_pedido}`,
     `Método de pago: ${pedido.metodo_pago}`,
@@ -507,7 +519,7 @@ function buildPedidoEmail(pedido) {
   const { kvTable, card } = EMAIL_UI;
   const cards = [
     card("Cliente", kvTable([["Nombre", pedido.nombre_cliente], ["Teléfono", EMAIL_UI.fmtTel(numeroCliente)]])),
-    card("Pedido", kvTable([["Método de pago", pedido.metodo_pago]]) + EMAIL_UI.itemsTable(detalleItems, String(pedido.total_pedido))),
+    card("Pedido", kvTable([["Método de pago", pedido.metodo_pago]]) + EMAIL_UI.itemsTable(detalleItems, String(pedido.total_pedido), pedido.comentario_cocina ? [["Comentario para cocina", pedido.comentario_cocina]] : [])),
     card("Factura", kvTable([["RTN", pedido.rtn]])),
   ];
   if (pedido.notas) cards.push(EMAIL_UI.notasCard(pedido.notas));
