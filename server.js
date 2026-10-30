@@ -1481,13 +1481,24 @@ function buildRossoEmail(p) {
   return { subject, text: lines.join("\n"), html };
 }
 
-// Solo El Manzano: "Delivery:/Recoger: <items>. Pago: X. RTN: …"
+// Solo El Manzano: "Delivery:/Recoger:/Comer en el restaurante: <items>. Pago: X. RTN: …"
 // Parrillas en el email: qty+plato, -Parrilla Personal|Duo|Cuarteto, -Acompañantes, •opts (una línea c/u)
 function parseManzanoPedido(raw) {
   let s = String(raw || "").trim();
   let tipo = "";
   const pm = s.match(/^\s*(delivery|domicilio|recoger)\s*:\s*/i);
   if (pm) { tipo = /recoger/i.test(pm[1]) ? "Para recoger" : "Delivery"; s = s.slice(pm[0].length); }
+  else {
+    // Comer en el restaurante: (sin mayúsculas/tildes; tolera "para comer en (el) restaurante")
+    const ci = s.indexOf(":");
+    if (ci > 0 && ci <= 60) {
+      const head = s.slice(0, ci).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (/^(?:para\s+)?comer\s+(?:en\s+)?(?:el\s+)?restaurante$/i.test(head)) {
+        tipo = "Comer en el restaurante";
+        s = s.slice(ci + 1).replace(/^\s+/, "");
+      }
+    }
+  }
   let rtn = "", rtnNombre = "", pago = "";
   const rm = s.match(/[.;,|]?\s*RTN\s*:?\s*([\d\s-]{6,})(?:\s*,?\s*a\s+nombre\s+de\s+([^.;|]+?))?\s*(?=$|[.;|]\s|\.$)/i);
   if (rm) { rtn = rm[1].replace(/\D/g, ""); rtnNombre = (rm[2] || "").trim(); s = s.replace(rm[0], "\n"); }
