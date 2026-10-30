@@ -1905,7 +1905,7 @@ app.post("/webhooks/pedido", handleRossoPedido);
  * Body: nombre (string), correo (string, admite forma hablada «juan arroba gmail punto com»), telefono (opcional).
  * Envía el PDF adjunto al correo del que llama + aviso de copia a PROSPERITY_COPY_EMAIL.
  */
-const PROSPERITY_COPY_EMAIL = process.env.PROSPERITY_COPY_EMAIL || "sarmientod6@gmail.com";
+const PROSPERITY_COPY_EMAIL = (process.env.PROSPERITY_COPY_EMAIL || "").trim();
 const PROSPERITY_FROM = `"Prosperity Partners" <${DEMO_FROM_EMAIL}>`;
 const PROSPERITY_PDF_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "prosperity", "hoja-reclamos-gastos.pdf");
 const PROSPERITY_PDF_FILENAME = "Hoja-de-reclamos-de-gastos-Prosperity-Partners.pdf";
@@ -2031,7 +2031,7 @@ app.post("/webhooks/prosperity/hoja-reclamos", async (req, res) => {
  * Body: correo (requerido; admite forma hablada), nombre (opcional).
  * Envía el PDF del menú adjunto + aviso de copia a WANGS_MENU_COPY_EMAIL.
  */
-const WANGS_MENU_COPY_EMAIL = process.env.WANGS_MENU_COPY_EMAIL || "sarmientod6@gmail.com";
+const WANGS_MENU_COPY_EMAIL = (process.env.WANGS_MENU_COPY_EMAIL || "").trim();
 const WANGS_MENU_FROM = `"Wangs" <${DEMO_FROM_EMAIL}>`;
 const WANGS_MENU_PDF_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "wangs", "menu-wangs.pdf");
 const WANGS_MENU_PDF_FILENAME = "Menu-Wangs.pdf";
