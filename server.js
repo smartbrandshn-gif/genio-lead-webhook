@@ -2026,6 +2026,101 @@ app.post("/webhooks/prosperity/hoja-reclamos", async (req, res) => {
   }
 });
 
+/* ---------- Wangs: enviar menú por correo ----------
+ * POST /webhooks/wangs/enviar-menu  (header X-Lead-Secret)
+ * Body: correo (requerido; admite forma hablada), nombre (opcional).
+ * Envía el PDF del menú adjunto + aviso de copia a WANGS_MENU_COPY_EMAIL.
+ */
+const WANGS_MENU_COPY_EMAIL = process.env.WANGS_MENU_COPY_EMAIL || "sarmientod6@gmail.com";
+const WANGS_MENU_FROM = `"Wangs" <${DEMO_FROM_EMAIL}>`;
+const WANGS_MENU_PDF_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "wangs", "menu-wangs.pdf");
+const WANGS_MENU_PDF_FILENAME = "Menu-Wangs.pdf";
+const WANGS_MENU_SUBJECT = "Menú de Wangs";
+
+function buildWangsMenuEmail(nombre) {
+  const { card, shell } = EMAIL_UI;
+  const F = "font-family:Arial,Helvetica,sans-serif;";
+  const p = (t) => `<div style="${F}font-size:14px;color:#111827;line-height:1.6;padding:6px 0">${t}</div>`;
+  const saludo = nombre ? `Hola ${nombre}` : "Hola";
+  const body = [
+    p(`${escHtml(saludo)},`),
+    p("Gracias por comunicarte con <b>Wangs</b>. Aquí tienes nuestro menú, adjunto en este correo."),
+    p("Cuando quieras hacer tu pedido, solo llámanos de nuevo y con gusto te atendemos."),
+    p("¡Que lo disfrutes!<br><b>Wangs</b>"),
+  ].join("");
+  const html = shell("Menú de Wangs", "", [card("Tu menú", body)]);
+  const text = [
+    `${saludo},`,
+    "",
+    "Gracias por comunicarte con Wangs. Aquí tienes nuestro menú, adjunto en este correo.",
+    "Cuando quieras hacer tu pedido, solo llámanos de nuevo y con gusto te atendemos.",
+    "",
+    "¡Que lo disfrutes!",
+    "Wangs",
+  ].join("\n");
+  return { subject: WANGS_MENU_SUBJECT, text, html };
+}
+
+function buildWangsMenuCopyEmail({ nombre, correo }) {
+  const ts = guatemalaTimestamp();
+  const { kvTable, card, shell } = EMAIL_UI;
+  const rows = [["Nombre", nombre || "(no indicado)"], ["Correo", correo], ["Documento", WANGS_MENU_PDF_FILENAME]];
+  const html = shell(ts, "", [card("Menú enviado — Wangs", kvTable(rows))]);
+  const text = ["Menú enviado — Wangs", "", `Fecha (America/Guatemala): ${ts}`, ...rows.map(([k, v]) => `${k}: ${v}`)].join("\n");
+  return { subject: `Copia: menú de Wangs enviado a ${nombre || correo}`, text, html };
+}
+
+app.post("/webhooks/wangs/enviar-menu", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  delete merged.secret;
+  const nombre = pick(merged, ["nombre", "name"]).replace(/\s+/g, " ").replace(/[<>]/g, "").slice(0, 80).trim();
+  const correoRaw = pick(merged, ["correo", "email", "correo_electronico"]);
+  console.log("[wangs-menu] inbound", { bodyKeys: Object.keys(req.body || {}), nombreLen: nombre.length, tieneCorreo: Boolean(correoRaw) });
+
+  const norm = normalizeCorreoHablado(correoRaw);
+  if (!norm.ok) {
+    return res.status(400).json({ ok: false, error: "correo_invalido", mensaje: "El correo no es válido; pídele a la persona que lo repita letra por letra (un solo correo)." });
+  }
+  const correo = norm.correo;
+
+  let pdf;
+  try {
+    pdf = fs.readFileSync(WANGS_MENU_PDF_PATH);
+  } catch (err) {
+    console.error("[wangs-menu] PDF no disponible", err?.message || err);
+    return res.status(500).json({ ok: false, error: "pdf_no_disponible" });
+  }
+
+  try {
+    const transport = createTransport();
+    const { subject, text, html } = buildWangsMenuEmail(nombre);
+    const info = await transport.sendMail({
+      from: WANGS_MENU_FROM,
+      to: correo,
+      subject,
+      text,
+      html,
+      attachments: [{ filename: WANGS_MENU_PDF_FILENAME, content: pdf, contentType: "application/pdf" }],
+    });
+    console.log(`[wangs-menu] enviado id=${info.messageId}`);
+    if (WANGS_MENU_COPY_EMAIL && WANGS_MENU_COPY_EMAIL.toLowerCase() !== correo) {
+      try {
+        const c = buildWangsMenuCopyEmail({ nombre, correo });
+        await transport.sendMail({ from: GENIO_NOTIFICACIONES_FROM, to: WANGS_MENU_COPY_EMAIL, subject: c.subject, text: c.text, html: c.html });
+      } catch (e) {
+        console.error("[wangs-menu] copia falló", e?.message || e);
+      }
+    }
+    return res.json({ ok: true, mensaje: `Menú enviado a ${correo}` });
+  } catch (err) {
+    console.error("[wangs-menu] SMTP", err?.message || err);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+  }
+});
+
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
 
 

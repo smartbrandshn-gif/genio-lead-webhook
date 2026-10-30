@@ -38,3 +38,6 @@ Env: `ROSSO_FORESTA_TO_EMAIL`, `ROSSO_PROCERES_TO_EMAIL` (default `sarmientod6@g
 Envía `assets/prosperity/hoja-reclamos-gastos.pdf` adjunto a `correo` (asunto «Hoja de reclamos de gastos – Prosperity Partners», From `"Prosperity Partners" <genionotificaciones@gmail.com>`) y un aviso de copia a `PROSPERITY_COPY_EMAIL` (default `sarmientod6@gmail.com`).
 Respuestas: `{ok:true, mensaje:"Hoja enviada a <correo>"}` · 400 `{ok:false, error:"correo_invalido"|"nombre_requerido"}` · 401 secreto inválido.
 Pruebas locales sin enviar: `MAIL_DRY_RUN=1 MAIL_DRY_RUN_DIR=./.mail-dry-run node server.js` (guarda cada mensaje como JSON).
+
+### Wangs — enviar menú por correo
+`POST /webhooks/wangs/enviar-menu` (header `X-Lead-Secret`). Body JSON: `correo` (requerido; acepta forma hablada), `nombre` (opcional). Adjunta `assets/wangs/menu-wangs.pdf` como `Menu-Wangs.pdf` (From `"Wangs" <genionotificaciones@gmail.com>`, asunto «Menú de Wangs») y manda aviso de copia a `WANGS_MENU_COPY_EMAIL` (default `sarmientod6@gmail.com`, se omite si es el mismo destinatario). Respuestas: `{ok:true, mensaje:"Menú enviado a <correo>"}` · 400 `correo_invalido` · 401 secreto inválido.
