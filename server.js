@@ -1524,8 +1524,15 @@ function expandManzanoDetalleItems(chunks) {
   const parrillaDishRe = /\b(Tradicional|Mar y Tierra|Tierra y Mar)\b/i;
   const pushUnique = (line) => {
     if (!line) return;
-    if (/^-Parrilla\s+/i.test(line) && out.some((x) => x.toLowerCase() === line.toLowerCase())) return;
-    if (out.length && out[out.length - 1] === line) return;
+    if (/^-Parrilla\s+/i.test(line)) {
+      // Solo se colapsa si ya está en el MISMO plato (desde la última línea de plato, sin guion/•); cada parrilla conserva su propia línea de tamaño.
+      let start = out.length;
+      while (start > 0 && /^[-–—•·*]/.test(out[start - 1])) start--;
+      if (start > 0) start--; // incluye la línea de plato
+      if (out.slice(start).some((x) => x.toLowerCase() === line.toLowerCase())) return;
+    }
+    // Solo líneas estructurales (-Acompañantes, •opción, …) se colapsan si se repiten seguidas; los platos repetidos se muestran todos.
+    if (/^[-–—•·*]/.test(line) && out.length && out[out.length - 1] === line) return;
     out.push(line);
   };
   for (const raw of chunks) {
