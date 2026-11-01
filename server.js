@@ -2132,6 +2132,101 @@ app.post("/webhooks/wangs/enviar-menu", async (req, res) => {
   }
 });
 
+/* ---------- El Manzano: enviar menú por correo ----------
+ * POST /webhooks/manzano/enviar-menu  (header X-Lead-Secret)
+ * Body: correo (requerido; admite forma hablada), nombre (opcional).
+ * Envía el PDF del menú adjunto + aviso de copia a MANZANO_MENU_COPY_EMAIL.
+ */
+const MANZANO_MENU_COPY_EMAIL = (process.env.MANZANO_MENU_COPY_EMAIL || "").trim();
+const MANZANO_MENU_FROM = `"El Manzano Steak House" <${DEMO_FROM_EMAIL}>`;
+const MANZANO_MENU_PDF_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "manzano", "menu-manzano.pdf");
+const MANZANO_MENU_PDF_FILENAME = "Menu-El-Manzano.pdf";
+const MANZANO_MENU_SUBJECT = "Menú El Manzano Steak House";
+
+function buildManzanoMenuEmail(nombre) {
+  const { card, shell } = EMAIL_UI;
+  const F = "font-family:Arial,Helvetica,sans-serif;";
+  const p = (t) => `<div style="${F}font-size:14px;color:#111827;line-height:1.6;padding:6px 0">${t}</div>`;
+  const saludo = nombre ? `Hola ${nombre}` : "Hola";
+  const body = [
+    p(`${escHtml(saludo)},`),
+    p("Gracias por comunicarte con <b>El Manzano Steak House</b>. Aquí tienes nuestro menú, adjunto en este correo."),
+    p("Cuando quieras hacer tu pedido o reservar tu mesa, solo llámanos de nuevo y con gusto te atendemos."),
+    p("¡Que lo disfrutes!<br><b>El Manzano Steak House</b>"),
+  ].join("");
+  const html = shell("Menú El Manzano Steak House", "", [card("Tu menú", body)]);
+  const text = [
+    `${saludo},`,
+    "",
+    "Gracias por comunicarte con El Manzano Steak House. Aquí tienes nuestro menú, adjunto en este correo.",
+    "Cuando quieras hacer tu pedido o reservar tu mesa, solo llámanos de nuevo y con gusto te atendemos.",
+    "",
+    "¡Que lo disfrutes!",
+    "El Manzano Steak House",
+  ].join("\n");
+  return { subject: MANZANO_MENU_SUBJECT, text, html };
+}
+
+function buildManzanoMenuCopyEmail({ nombre, correo }) {
+  const ts = guatemalaTimestamp();
+  const { kvTable, card, shell } = EMAIL_UI;
+  const rows = [["Nombre", nombre || "(no indicado)"], ["Correo", correo], ["Documento", MANZANO_MENU_PDF_FILENAME]];
+  const html = shell(ts, "", [card("Menú enviado — El Manzano", kvTable(rows))]);
+  const text = ["Menú enviado — El Manzano", "", `Fecha (America/Guatemala): ${ts}`, ...rows.map(([k, v]) => `${k}: ${v}`)].join("\n");
+  return { subject: `Copia: menú de El Manzano enviado a ${nombre || correo}`, text, html };
+}
+
+app.post("/webhooks/manzano/enviar-menu", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  delete merged.secret;
+  const nombre = pick(merged, ["nombre", "name"]).replace(/\s+/g, " ").replace(/[<>]/g, "").slice(0, 80).trim();
+  const correoRaw = pick(merged, ["correo", "email", "correo_electronico"]);
+  console.log("[manzano-menu] inbound", { bodyKeys: Object.keys(req.body || {}), nombreLen: nombre.length, tieneCorreo: Boolean(correoRaw) });
+
+  const norm = normalizeCorreoHablado(correoRaw);
+  if (!norm.ok) {
+    return res.status(400).json({ ok: false, error: "correo_invalido", mensaje: "El correo no es válido; pídele a la persona que lo repita letra por letra (un solo correo)." });
+  }
+  const correo = norm.correo;
+
+  let pdf;
+  try {
+    pdf = fs.readFileSync(MANZANO_MENU_PDF_PATH);
+  } catch (err) {
+    console.error("[manzano-menu] PDF no disponible", err?.message || err);
+    return res.status(500).json({ ok: false, error: "pdf_no_disponible" });
+  }
+
+  try {
+    const transport = createTransport();
+    const { subject, text, html } = buildManzanoMenuEmail(nombre);
+    const info = await transport.sendMail({
+      from: MANZANO_MENU_FROM,
+      to: correo,
+      subject,
+      text,
+      html,
+      attachments: [{ filename: MANZANO_MENU_PDF_FILENAME, content: pdf, contentType: "application/pdf" }],
+    });
+    console.log(`[manzano-menu] enviado id=${info.messageId}`);
+    if (MANZANO_MENU_COPY_EMAIL && MANZANO_MENU_COPY_EMAIL.toLowerCase() !== correo) {
+      try {
+        const c = buildManzanoMenuCopyEmail({ nombre, correo });
+        await transport.sendMail({ from: GENIO_NOTIFICACIONES_FROM, to: MANZANO_MENU_COPY_EMAIL, subject: c.subject, text: c.text, html: c.html });
+      } catch (e) {
+        console.error("[manzano-menu] copia falló", e?.message || e);
+      }
+    }
+    return res.json({ ok: true, mensaje: `Menú enviado a ${correo}` });
+  } catch (err) {
+    console.error("[manzano-menu] SMTP", err?.message || err);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+  }
+});
+
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
 
 
