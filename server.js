@@ -2047,12 +2047,11 @@ app.post("/webhooks/prosperity/hoja-reclamos", async (req, res) => {
 /* ---------- Wangs: enviar menú por correo ----------
  * POST /webhooks/wangs/enviar-menu  (header X-Lead-Secret)
  * Body: correo (requerido; admite forma hablada), nombre (opcional).
- * Envía el PDF del menú adjunto + aviso de copia a WANGS_MENU_COPY_EMAIL.
+ * Envía el enlace al menú en línea (sin adjunto) + aviso de copia a WANGS_MENU_COPY_EMAIL.
  */
 const WANGS_MENU_COPY_EMAIL = (process.env.WANGS_MENU_COPY_EMAIL || "").trim();
 const WANGS_MENU_FROM = `"Wangs" <${DEMO_FROM_EMAIL}>`;
-const WANGS_MENU_PDF_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "wangs", "menu-wangs.pdf");
-const WANGS_MENU_PDF_FILENAME = "Menu-Wangs.pdf";
+const WANGS_MENU_URL = "https://wangs.menu.yalocobro.com/";
 const WANGS_MENU_SUBJECT = "Menú de Wangs";
 
 function buildWangsMenuEmail(nombre) {
@@ -2062,7 +2061,9 @@ function buildWangsMenuEmail(nombre) {
   const saludo = nombre ? `Hola ${nombre}` : "Hola";
   const body = [
     p(`${escHtml(saludo)},`),
-    p("Gracias por comunicarte con <b>Wangs</b>. Aquí tienes nuestro menú, adjunto en este correo."),
+    p("Gracias por comunicarte con <b>Wangs</b>. Aquí tienes el enlace a nuestro menú:"),
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 14px"><tr><td align="center" bgcolor="#166534" style="background:#166534;border-radius:6px"><a href="${WANGS_MENU_URL}" target="_blank" style="${F}display:inline-block;padding:13px 28px;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px">Ver menú de Wangs</a></td></tr></table>`,
+    p(`Si el botón no funciona, copia y pega este enlace en tu navegador:<br><a href="${WANGS_MENU_URL}" target="_blank" style="color:#166534;word-break:break-all">${WANGS_MENU_URL}</a>`),
     p("Cuando quieras hacer tu pedido, solo llámanos de nuevo y con gusto te atendemos."),
     p("¡Que lo disfrutes!<br><b>Wangs</b>"),
   ].join("");
@@ -2070,7 +2071,9 @@ function buildWangsMenuEmail(nombre) {
   const text = [
     `${saludo},`,
     "",
-    "Gracias por comunicarte con Wangs. Aquí tienes nuestro menú, adjunto en este correo.",
+    "Gracias por comunicarte con Wangs. Aquí tienes el enlace a nuestro menú:",
+    WANGS_MENU_URL,
+    "",
     "Cuando quieras hacer tu pedido, solo llámanos de nuevo y con gusto te atendemos.",
     "",
     "¡Que lo disfrutes!",
@@ -2082,7 +2085,7 @@ function buildWangsMenuEmail(nombre) {
 function buildWangsMenuCopyEmail({ nombre, correo }) {
   const ts = guatemalaTimestamp();
   const { kvTable, card, shell } = EMAIL_UI;
-  const rows = [["Nombre", nombre || "(no indicado)"], ["Correo", correo], ["Documento", WANGS_MENU_PDF_FILENAME]];
+  const rows = [["Nombre", nombre || "(no indicado)"], ["Correo", correo], ["Enlace del menú", WANGS_MENU_URL]];
   const html = shell(ts, "", [card("Menú enviado — Wangs", kvTable(rows))]);
   const text = ["Menú enviado — Wangs", "", `Fecha (America/Guatemala): ${ts}`, ...rows.map(([k, v]) => `${k}: ${v}`)].join("\n");
   return { subject: `Copia: menú de Wangs enviado a ${nombre || correo}`, text, html };
@@ -2104,14 +2107,6 @@ app.post("/webhooks/wangs/enviar-menu", async (req, res) => {
   }
   const correo = norm.correo;
 
-  let pdf;
-  try {
-    pdf = fs.readFileSync(WANGS_MENU_PDF_PATH);
-  } catch (err) {
-    console.error("[wangs-menu] PDF no disponible", err?.message || err);
-    return res.status(500).json({ ok: false, error: "pdf_no_disponible" });
-  }
-
   try {
     const transport = createTransport();
     const { subject, text, html } = buildWangsMenuEmail(nombre);
@@ -2121,7 +2116,6 @@ app.post("/webhooks/wangs/enviar-menu", async (req, res) => {
       subject,
       text,
       html,
-      attachments: [{ filename: WANGS_MENU_PDF_FILENAME, content: pdf, contentType: "application/pdf" }],
     });
     console.log(`[wangs-menu] enviado id=${info.messageId}`);
     if (WANGS_MENU_COPY_EMAIL && WANGS_MENU_COPY_EMAIL.toLowerCase() !== correo) {
