@@ -1105,13 +1105,15 @@ const TUCHI_TO_EMAIL = process.env.TUCHI_TO_EMAIL || "sarmientod6@gmail.com";
 const TUCHI_FROM = `"Tuchi Pedidos" <genionotificaciones@gmail.com>`;
 const MANZANO_TO_EMAIL = process.env.MANZANO_TO_EMAIL || "sarmientod6@gmail.com";
 const MANZANO_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
+const IZAKAYA_TO_EMAIL = process.env.IZAKAYA_TO_EMAIL || "sarmientod6@gmail.com";
+const IZAKAYA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
 const PULHAPANZAC_RESERVA_TO_EMAIL = "sarmientod6@gmail.com, pulhahn@gmail.com, catarataspulhapanzak@gmail.com";
 const PULHAPANZAC_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_NOTA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const FINCAZUNA_TO_EMAIL = process.env.FINCAZUNA_TO_EMAIL || "sarmientod6@gmail.com";
 const FINCAZUNA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
-const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
+const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Izakaya" ? "Izakaya Sushi Bar" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -1122,6 +1124,7 @@ function rossoSucursal(raw) {
   if (s.includes("procer")) return "Proceres";
   if (s.includes("tuchi")) return "Tuchi";
   if (s.includes("manzano")) return "Manzano";
+  if (s.includes("izakaya")) return "Izakaya";
   if (s.includes("pulhapanz") || s.includes("pulapanz")) return "Pulhapanzac";
   if (s.includes("fincazuna") || s.includes("finca zuna") || s.includes("finca_zuna")) return "FincaZuna";
   return "";
@@ -1336,7 +1339,7 @@ function buildRossoEmail(p) {
   const ts = guatemalaTimestamp();
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
-  const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : null;
+  const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : p.sucursal === "Izakaya" && hasPedido ? parseIzakayaPedido(p.pedido) : null;
   if (mz) {
     p = { ...p, tipo_pedido: mz.tipo || p.tipo_pedido };
     if (!p.metodo_pago && mz.pago) p.metodo_pago = mz.pago;
@@ -1344,7 +1347,7 @@ function buildRossoEmail(p) {
     if (!p.rtn_nombre && mz.rtnNombre) p.rtn_nombre = mz.rtnNombre;
   }
   let subject;
-  if (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac") {
+  if (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac" || p.sucursal === "Izakaya") {
     // Subject estilo Manzano: Nuevo pedido/reserva: nombre (sin monto)
     const who = String((!hasPedido ? (p.reserva_nombre || p.nombre) : p.nombre) || "").trim() || "cliente";
     subject = hasPedido ? `Nuevo pedido: ${who}` : `Nueva reserva: ${who}`;
@@ -1359,7 +1362,7 @@ function buildRossoEmail(p) {
   const mzExtra = mz ? [["Comentario del cliente", normComentarioCliente(p.comentario_cliente)], ["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
   // Solo El Manzano: platos de precio de temporada (Langosta, Caracol) no entran en el total
   const totalStr = hasPedido
-    ? (mz && /precio de temporada/i.test(String(p.pedido || ""))
+    ? (mz && p.sucursal === "Manzano" && /precio de temporada/i.test(String(p.pedido || ""))
       ? (p.total ? `${rossoMoney(p.total)} + precio de temporada (lo confirma el restaurante)` : "Precio de temporada (lo confirma el restaurante)")
       : rossoMoney(p.total))
     : "";
@@ -1475,7 +1478,7 @@ function buildRossoEmail(p) {
     cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
   }
   if (!isPulhaReserva && p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
-  const html = (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac")
+  const html = (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac" || p.sucursal === "Izakaya")
     ? EMAIL_UI.shell(ts, "", cards) // franja verde: solo fecha/hora
     : EMAIL_UI.shell(`${title} — ${rossoBrand(p)}`, `Sucursal ${p.sucursal} · ${ts}`, cards);
   return { subject, text: lines.join("\n"), html };
@@ -1515,6 +1518,27 @@ function parseManzanoPedido(raw) {
   );
   const items = expandManzanoDetalleItems(chunks.length ? chunks : [s.trim()].filter(Boolean));
   return { tipo, pago, rtn, rtnNombre, items: items.length ? items : [String(raw || "").trim()] };
+}
+
+// Solo Izakaya: "Recoger:/Comer en el restaurante:" + líneas "[cantidad] [nombre] [opción] — [precio] lempiras"
+// y opcionalmente "RTN: [14 dígitos], a nombre de [nombre]" al final. Cada línea = un renglón (sin lógica de parrillas).
+function parseIzakayaPedido(raw) {
+  let s = String(raw || "").trim();
+  let tipo = "";
+  const ci = s.indexOf(":");
+  if (ci > 0 && ci <= 60) {
+    const head = s.slice(0, ci).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (/^(?:para\s+)?recoger$/i.test(head)) { tipo = "Para recoger"; s = s.slice(ci + 1).replace(/^\s+/, ""); }
+    else if (/^(?:para\s+)?comer\s+(?:en\s+)?(?:el\s+)?restaurante$/i.test(head)) { tipo = "Comer en el restaurante"; s = s.slice(ci + 1).replace(/^\s+/, ""); }
+  }
+  let rtn = "", rtnNombre = "";
+  const rm = s.match(/[.;,|]?\s*RTN\s*:?\s*([\d\s-]{6,})(?:\s*,?\s*a\s+nombre\s+de\s+([^.;|\n]+?))?\s*(?=$|[.;|]\s|\.$|\n)/i);
+  if (rm) { rtn = rm[1].replace(/\D/g, ""); rtnNombre = (rm[2] || "").trim(); s = s.replace(rm[0], "\n"); }
+  const items = s
+    .split(/\s*\|\s*|\s*;\s*|\r?\n|(?<=lempiras?)\s*[.,]?\s+(?=\d)/i)
+    .map((x) => x.trim().replace(/^[-•*]\s*/, "").replace(/[.,]$/, ""))
+    .filter(Boolean);
+  return { tipo, pago: "", rtn, rtnNombre, items: items.length ? items : [String(raw || "").trim()] };
 }
 
 /** Solo Parrillas (Tradicional, Mar y Tierra, Tierra y Mar). */
@@ -1890,12 +1914,12 @@ async function handleRossoPedido(req, res) {
   const now = Date.now();
   for (const [k, t] of ROSSO_RECENT) if (now - t > 10 * 60 * 1000) ROSSO_RECENT.delete(k);
   if (ROSSO_RECENT.has(dupKey)) return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
-  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
+  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "Izakaya" ? IZAKAYA_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
   if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
   const email = buildRossoEmail(p);
   if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
   try {
-    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
+    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "Izakaya" ? IZAKAYA_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
     ROSSO_RECENT.set(dupKey, Date.now());
     console.log(`[rosso] enviado a ${toEmail} id=${info.messageId}`);
     return res.json({ ok: true, message: p.tipo === "reserva" ? "Reserva enviada" : "Pedido enviado", tipo: p.tipo, sucursal: p.sucursal, messageId: info.messageId, to: toEmail });
