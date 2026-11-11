@@ -308,6 +308,10 @@ function extractPedido(req) {
   const pagoRaw = pick(merged, ["metodo_pago", "pago", "payment"]);
   const rtnRaw = pick(merged, ["rtn", "RTN", "factura_rtn"]);
   const motivoRaw = pick(merged, ["motivo_cancelacion", "motivo", "razon_cancelacion", "reason"]);
+  // Wangs envía el tipo de pedido en `tipo` ('recoger' | 'comer en el restaurante').
+  // Aliases por compatibilidad. Vacío si no viene; no se valida (el pedido sigue).
+  const tipoRaw = pick(merged, ["tipo", "tipo_pedido", "modalidad", "para"]);
+  const tipo_pedido = rossoTipoPedido(tipoRaw) || tipoRaw;
   const phone = resolveCallerPhone(req);
   return {
     nombre_cliente,
@@ -315,6 +319,7 @@ function extractPedido(req) {
     notas,
     comentario_cocina,
     total_pedido,
+    tipo_pedido,
     metodo_pago: normalizePago(pagoRaw),
     rtn: normalizeRtn(rtnRaw),
     motivo_cancelacion: motivoRaw && !looksFake(motivoRaw) ? String(motivoRaw).trim() : "",
@@ -505,6 +510,7 @@ function buildPedidoEmail(pedido) {
   const pedidoBody = formatPedidoCompleto(pedido.pedido_completo);
   const detalleItems = wangsDetalleItems(pedidoBody);
   const numeroCliente = pedido.caller_id || "no";
+  const tipoPedido = pedido.tipo_pedido || "(no indicado)";
   const text = [
     "Nuevo pedido — Wangs",
     "",
@@ -515,6 +521,7 @@ function buildPedidoEmail(pedido) {
     ...(pedido.comentario_cocina ? [`Comentario para cocina: ${pedido.comentario_cocina}`] : []),
     `Notas / solicitudes especiales: ${pedido.notas || "(ninguna)"}`,
     `Total: ${pedido.total_pedido}`,
+    `Tipo de pedido: ${tipoPedido}`,
     `Método de pago: ${pedido.metodo_pago}`,
     `RTN: ${pedido.rtn}`,
     `número de cliente: ${numeroCliente}`,
@@ -522,7 +529,7 @@ function buildPedidoEmail(pedido) {
   const { kvTable, card } = EMAIL_UI;
   const cards = [
     card("Cliente", kvTable([["Nombre", pedido.nombre_cliente], ["Teléfono", EMAIL_UI.fmtTel(numeroCliente)]])),
-    card("Pedido", kvTable([["Método de pago", pedido.metodo_pago]]) + EMAIL_UI.itemsTable(detalleItems, String(pedido.total_pedido), pedido.comentario_cocina ? [["Comentario para cocina", pedido.comentario_cocina]] : [])),
+    card("Pedido", kvTable([["Tipo de pedido", tipoPedido], ["Método de pago", pedido.metodo_pago]]) + EMAIL_UI.itemsTable(detalleItems, String(pedido.total_pedido), pedido.comentario_cocina ? [["Comentario para cocina", pedido.comentario_cocina]] : [])),
     card("Factura", kvTable([["RTN", pedido.rtn]])),
   ];
   if (pedido.notas) cards.push(EMAIL_UI.notasCard(pedido.notas));
