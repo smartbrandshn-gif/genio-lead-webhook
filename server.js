@@ -1193,6 +1193,8 @@ function extractRosso(req) {
     nombre: String(raw("nombre")),
     telefono: rossoTelefono(raw("telefono")),
     tipo_pedido: rossoTipoPedido(raw("tipo_pedido")),
+    _tipoPedidoRaw: raw("tipo_pedido"),
+    hora_recogida: String(raw("hora_recogida")),
     pedido: String(raw("pedido")),
     total: rossoTotal(raw("total")),
     necesita_rtn: rossoBool(raw("necesita_rtn")),
@@ -1351,10 +1353,11 @@ function buildManzanoEventoEmail(p) {
 function buildRossoEmail(p) {
   if (isManzanoEvento(p)) return buildManzanoEventoEmail(p);
   p = { ...p };
+  if (p.sucursal === "El Chanchito") p = applyChanchitoPedidoFields(p);
   const ts = guatemalaTimestamp();
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
-  const mz = isManzanoLike(p) && hasPedido ? parseManzanoPedido(p.pedido) : (p.sucursal === "Izakaya" || p.sucursal === "Arnies") && hasPedido ? parseIzakayaPedido(p.pedido) : null;
+  const mz = p.sucursal === "El Chanchito" && hasPedido ? parseChanchitoPedido(p.pedido) : isManzanoLike(p) && hasPedido ? parseManzanoPedido(p.pedido) : (p.sucursal === "Izakaya" || p.sucursal === "Arnies") && hasPedido ? parseIzakayaPedido(p.pedido) : null;
   if (mz) {
     p = { ...p, tipo_pedido: mz.tipo || p.tipo_pedido };
     if (!p.metodo_pago && mz.pago) p.metodo_pago = mz.pago;
@@ -1392,9 +1395,16 @@ function buildRossoEmail(p) {
   ];
   const rows = [["Sucursal", p.sucursal], ["Cliente", p.nombre], ["Teléfono", p.telefono]];
   const pedRows = [];
+  const isChanchitoProgramado = p.sucursal === "El Chanchito" && rossoNorm(p.tipo_pedido).includes("programado");
+  const horaRecogidaRow = isChanchitoProgramado ? (String(p.hora_recogida || "").trim() || (mz && mz.horaRecogida) || "(no indicada)") : "";
   if (hasPedido) {
-    lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, ...mzExtra.map(([k, v]) => `${k}: ${v}`), `Total: ${totalStr}`);
-    pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", totalStr]);
+    if (isChanchitoProgramado) {
+      lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, `Hora de recogida: ${horaRecogidaRow}`, "Detalle:", pedidoBody, ...mzExtra.map(([k, v]) => `${k}: ${v}`), `Total: ${totalStr}`);
+      pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Hora de recogida", horaRecogidaRow], ["Total", totalStr]);
+    } else {
+      lines.push("", "PEDIDO", `Tipo de pedido: ${p.tipo_pedido}`, "Detalle:", pedidoBody, ...mzExtra.map(([k, v]) => `${k}: ${v}`), `Total: ${totalStr}`);
+      pedRows.push(["Tipo de pedido", p.tipo_pedido], ["Total", totalStr]);
+    }
   }
   const resRows = [];
   const isPulhaReserva = hasReserva && p.sucursal === "Pulhapanzac";
@@ -1461,7 +1471,7 @@ function buildRossoEmail(p) {
     cards.push(card("Cliente", kvTable([["Nombre", p.nombre], ["Teléfono", telFmt]])));
   }
   if (hasPedido) {
-    cards.push(card("Pedido", kvTable([["Tipo", p.tipo_pedido]]) + itemsTable));
+    cards.push(card("Pedido", kvTable(isChanchitoProgramado ? [["Tipo", p.tipo_pedido], ["Hora de recogida", horaRecogidaRow]] : [["Tipo", p.tipo_pedido]]) + itemsTable));
   }
   if (hasReserva && isPulhaReserva) {
     const personas = p.cantidad_personas || p.reserva_personas;
@@ -1533,6 +1543,55 @@ function parseManzanoPedido(raw) {
   );
   const items = expandManzanoDetalleItems(chunks.length ? chunks : [s.trim()].filter(Boolean));
   return { tipo, pago, rtn, rtnNombre, items: items.length ? items : [String(raw || "").trim()] };
+}
+
+function chanchitoTipoPedido(raw) {
+  const s = rossoNorm(raw);
+  if (!s) return "";
+  if (s.includes("programado")) return "Pedido programado";
+  return rossoTipoPedido(raw);
+}
+
+function extractChanchitoHoraLine(s) {
+  // No cortar en "." ni ",": si no, "3:30 p.m." queda en "3:30 p"
+  const re = /(?:^|[\n;|])\s*\bHora\s*:\s*([^\n;|]+)/i;
+  const src = String(s || "");
+  const m = src.match(re);
+  if (!m) return { text: src, hora: "" };
+  const hora = m[1].trim();
+  const text = src.replace(re, (full) => (/^[\n;|]/.test(full) ? full[0] : "")).replace(/^\s+/, "");
+  return { text, hora };
+}
+
+// Solo El Chanchito: "Pedido programado:" + opcional "Hora: …". El resto es la misma plantilla que El Manzano.
+function parseChanchitoPedido(raw) {
+  let s = String(raw || "").trim();
+  let tipo = "";
+  const ci = s.indexOf(":");
+  if (ci > 0 && ci <= 60) {
+    const head = s.slice(0, ci).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (/^(?:(?:para\s+)?(?:pedido\s+)?)?programado$/i.test(head)) {
+      tipo = "Pedido programado";
+      s = s.slice(ci + 1).replace(/^\s+/, "");
+    }
+  }
+  const horaParsed = extractChanchitoHoraLine(s);
+  s = horaParsed.text;
+  const parsed = parseManzanoPedido(s);
+  if (tipo) parsed.tipo = tipo;
+  parsed.horaRecogida = horaParsed.hora;
+  return parsed;
+}
+
+function applyChanchitoPedidoFields(p) {
+  if (p.sucursal !== "El Chanchito") return p;
+  const parsed = parseChanchitoPedido(p.pedido);
+  const fromField = chanchitoTipoPedido(p._tipoPedidoRaw || p.tipo_pedido);
+  const tipo = parsed.tipo === "Pedido programado" || fromField === "Pedido programado"
+    ? "Pedido programado"
+    : (parsed.tipo || fromField || p.tipo_pedido);
+  const hora = String(p.hora_recogida || "").trim() || parsed.horaRecogida || "";
+  return { ...p, tipo_pedido: tipo, hora_recogida: hora };
 }
 
 // Solo Izakaya: "Recoger:/Comer en el restaurante:" + líneas "[cantidad] [nombre] [opción] — [precio] lempiras"
@@ -1914,14 +1973,21 @@ function applyRossoTipoRoute(req, res) {
     res.status(404).json({ ok: false, error: "ruta inválida" });
     return false;
   }
-  req.body = { ...(req.body && typeof req.body === "object" ? req.body : {}), sucursal: req.params.sucursal, ...fx };
+  const body = { ...(req.body && typeof req.body === "object" ? req.body : {}), sucursal: req.params.sucursal };
+  // Solo El Chanchito: no pisar tipo_pedido=programado con el default 'recoger' de la ruta /pedido
+  if (rossoSucursal(body.sucursal) === "El Chanchito" && fx.tipo === "pedido" && chanchitoTipoPedido(body.tipo_pedido) === "Pedido programado") {
+    req.body = { ...body, tipo: "pedido", tipo_pedido: "pedido programado" };
+  } else {
+    req.body = { ...body, ...fx };
+  }
   return true;
 }
 const ROSSO_RECENT = new Map();
 async function handleRossoPedido(req, res) {
   const auth = checkSecret(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
-  const p = extractRosso(req);
+  let p = extractRosso(req);
+  if (p.sucursal === "El Chanchito") p = applyChanchitoPedidoFields(p);
   console.log("[rosso] inbound", p);
   const err = validateRosso(p);
   if (err) return res.status(400).json({ ok: false, error: err });
@@ -2359,6 +2425,21 @@ app.post("/webhooks/manzano/enviar-menu", async (req, res) => {
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
 
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`genio-lead-webhook on :${PORT}`);
-});
+// Evita abrir el puerto al importar server.js desde tests
+const isDirectRun = process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+if (isDirectRun) {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`genio-lead-webhook on :${PORT}`);
+  });
+}
+
+export {
+  applyChanchitoPedidoFields,
+  applyRossoTipoRoute,
+  buildRossoEmail,
+  chanchitoTipoPedido,
+  extractRosso,
+  parseChanchitoPedido,
+  parseManzanoPedido,
+  rossoTipoPedido,
+};
