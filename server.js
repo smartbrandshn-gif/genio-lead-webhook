@@ -1122,7 +1122,9 @@ const PULHAPANZAC_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>
 const PULHAPANZAC_NOTA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const FINCAZUNA_TO_EMAIL = process.env.FINCAZUNA_TO_EMAIL || "sarmientod6@gmail.com";
 const FINCAZUNA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
-const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "Izakaya" ? "Izakaya Sushi Bar" : p.sucursal === "Arnies" ? "Arnie's" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
+const CHANCHITO_TO_EMAIL = process.env.CHANCHITO_TO_EMAIL || "sarmientod6@gmail.com"; // TEMPORAL - solo pruebas: reemplazar por el correo real de El Chanchito antes de salir en vivo
+const CHANCHITO_FROM = `"El Chanchito Pedidos" <genionotificaciones@gmail.com>`;
+const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "El Chanchito" ? "El Chanchito" : p.sucursal === "Izakaya" ? "Izakaya Sushi Bar" : p.sucursal === "Arnies" ? "Arnie's" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -1133,6 +1135,7 @@ function rossoSucursal(raw) {
   if (s.includes("procer")) return "Proceres";
   if (s.includes("tuchi")) return "Tuchi";
   if (s.includes("manzano")) return "Manzano";
+  if (s.includes("chanchito")) return "El Chanchito";
   if (s.includes("izakaya")) return "Izakaya";
   if (s.includes("arnie")) return "Arnies";
   if (s.includes("pulhapanz") || s.includes("pulapanz")) return "Pulhapanzac";
@@ -1259,8 +1262,10 @@ function extractRosso(req) {
   };
 }
 
-// El Manzano: reserva con tipo_evento → email de evento privado
-const isManzanoEvento = (p) => p.sucursal === "Manzano" && p.tipo === "reserva" && String(p.tipo_evento || "").trim() !== "";
+// El Manzano y El Chanchito: misma plantilla de pedido/reserva (delivery, eventos, tipo de pedido)
+const isManzanoLike = (p) => p.sucursal === "Manzano" || p.sucursal === "El Chanchito";
+// Reserva con tipo_evento → email de evento privado (El Manzano y El Chanchito)
+const isManzanoEvento = (p) => isManzanoLike(p) && p.tipo === "reserva" && String(p.tipo_evento || "").trim() !== "";
 
 function validateManzanoEvento(p) {
   if (!String(p.reserva_nombre || "").trim() && String(p.nombre || "").trim()) p.reserva_nombre = p.nombre;
@@ -1338,7 +1343,7 @@ function buildManzanoEventoEmail(p) {
     ["Cantidad de personas", personas],
   ];
   const subject = `Nuevo evento: ${nombre}`;
-  const text = ["Nueva reserva de evento — El Manzano", "", `Fecha (America/Guatemala): ${ts}`, "", "RESERVA DE EVENTO", ...rows.map(([k, v]) => `${k}: ${v}`)].join("\n");
+  const text = [`Nueva reserva de evento — ${rossoBrand(p)}`, "", `Fecha (America/Guatemala): ${ts}`, "", "RESERVA DE EVENTO", ...rows.map(([k, v]) => `${k}: ${v}`)].join("\n");
   const html = EMAIL_UI.shell(ts, "", [EMAIL_UI.card("Nueva reserva de evento", EMAIL_UI.kvTable(rows))]); // franja verde: solo fecha/hora (diseño Manzano)
   return { subject, text, html };
 }
@@ -1349,7 +1354,7 @@ function buildRossoEmail(p) {
   const ts = guatemalaTimestamp();
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
-  const mz = p.sucursal === "Manzano" && hasPedido ? parseManzanoPedido(p.pedido) : (p.sucursal === "Izakaya" || p.sucursal === "Arnies") && hasPedido ? parseIzakayaPedido(p.pedido) : null;
+  const mz = isManzanoLike(p) && hasPedido ? parseManzanoPedido(p.pedido) : (p.sucursal === "Izakaya" || p.sucursal === "Arnies") && hasPedido ? parseIzakayaPedido(p.pedido) : null;
   if (mz) {
     p = { ...p, tipo_pedido: mz.tipo || p.tipo_pedido };
     if (!p.metodo_pago && mz.pago) p.metodo_pago = mz.pago;
@@ -1357,7 +1362,7 @@ function buildRossoEmail(p) {
     if (!p.rtn_nombre && mz.rtnNombre) p.rtn_nombre = mz.rtnNombre;
   }
   let subject;
-  if (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac" || p.sucursal === "Izakaya" || p.sucursal === "Arnies") {
+  if (isManzanoLike(p) || p.sucursal === "Pulhapanzac" || p.sucursal === "Izakaya" || p.sucursal === "Arnies") {
     // Subject estilo Manzano: Nuevo pedido/reserva: nombre (sin monto)
     const who = String((!hasPedido ? (p.reserva_nombre || p.nombre) : p.nombre) || "").trim() || "cliente";
     subject = hasPedido ? `Nuevo pedido: ${who}` : `Nueva reserva: ${who}`;
@@ -1372,7 +1377,7 @@ function buildRossoEmail(p) {
   const mzExtra = mz ? [["Comentario del cliente", normComentarioCliente(p.comentario_cliente)], ["Método de pago", p.metodo_pago], ["RTN", p.rtn_numero], ["Factura a nombre de", p.rtn_nombre]].filter(([, v]) => v) : [];
   // Solo El Manzano: platos de precio de temporada (Langosta, Caracol) no entran en el total
   const totalStr = hasPedido
-    ? (mz && p.sucursal === "Manzano" && /precio de temporada/i.test(String(p.pedido || ""))
+    ? (mz && isManzanoLike(p) && /precio de temporada/i.test(String(p.pedido || ""))
       ? (p.total ? `${rossoMoney(p.total)} + precio de temporada (lo confirma el restaurante)` : "Precio de temporada (lo confirma el restaurante)")
       : rossoMoney(p.total))
     : "";
@@ -1488,7 +1493,7 @@ function buildRossoEmail(p) {
     cards.push(card("Reserva", kvTable([["A nombre de", p.reserva_nombre], ["Personas", String(p.reserva_personas)], ["Día", p.reserva_fecha], ["Hora", p.reserva_hora]])));
   }
   if (!isPulhaReserva && p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
-  const html = (p.sucursal === "Manzano" || p.sucursal === "Pulhapanzac" || p.sucursal === "Izakaya" || p.sucursal === "Arnies")
+  const html = (isManzanoLike(p) || p.sucursal === "Pulhapanzac" || p.sucursal === "Izakaya" || p.sucursal === "Arnies")
     ? EMAIL_UI.shell(ts, "", cards) // franja verde: solo fecha/hora
     : EMAIL_UI.shell(`${title} — ${rossoBrand(p)}`, `Sucursal ${p.sucursal} · ${ts}`, cards);
   return { subject, text: lines.join("\n"), html };
@@ -1924,12 +1929,12 @@ async function handleRossoPedido(req, res) {
   const now = Date.now();
   for (const [k, t] of ROSSO_RECENT) if (now - t > 10 * 60 * 1000) ROSSO_RECENT.delete(k);
   if (ROSSO_RECENT.has(dupKey)) return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
-  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "Izakaya" ? IZAKAYA_TO_EMAIL : p.sucursal === "Arnies" ? ARNIES_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
+  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "El Chanchito" ? CHANCHITO_TO_EMAIL : p.sucursal === "Izakaya" ? IZAKAYA_TO_EMAIL : p.sucursal === "Arnies" ? ARNIES_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
   if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
   const email = buildRossoEmail(p);
   if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
   try {
-    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "Izakaya" ? IZAKAYA_FROM : p.sucursal === "Arnies" ? ARNIES_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
+    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "El Chanchito" ? CHANCHITO_FROM : p.sucursal === "Izakaya" ? IZAKAYA_FROM : p.sucursal === "Arnies" ? ARNIES_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
     ROSSO_RECENT.set(dupKey, Date.now());
     console.log(`[rosso] enviado a ${toEmail} id=${info.messageId}`);
     return res.json({ ok: true, message: p.tipo === "reserva" ? "Reserva enviada" : "Pedido enviado", tipo: p.tipo, sucursal: p.sucursal, messageId: info.messageId, to: toEmail });
