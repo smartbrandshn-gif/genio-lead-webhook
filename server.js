@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerPowerFmRoutes } from "./powerfm.js";
 
 const PORT = Number(process.env.PORT || 10000);
 const LEAD_WEBHOOK_SECRET = process.env.LEAD_WEBHOOK_SECRET || "";
@@ -2421,6 +2422,9 @@ app.post("/webhooks/manzano/enviar-menu", async (req, res) => {
     return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
   }
 });
+
+// Power FM / Regina — registro de oyentes (ver powerfm.js). Antes del 404.
+registerPowerFmRoutes(app, { checkSecret });
 
 app.use((_req, res) => res.status(404).json({ ok: false, error: "No encontrado" }));
 

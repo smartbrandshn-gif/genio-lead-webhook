@@ -41,3 +41,11 @@ Pruebas locales sin enviar: `MAIL_DRY_RUN=1 MAIL_DRY_RUN_DIR=./.mail-dry-run nod
 
 ### Wangs — enviar menú por correo
 `POST /webhooks/wangs/enviar-menu` (header `X-Lead-Secret`). Body JSON: `correo` (requerido; acepta forma hablada), `nombre` (opcional). Adjunta `assets/wangs/menu-wangs.pdf` como `Menu-Wangs.pdf` (From `"Wangs" <genionotificaciones@gmail.com>`, asunto «Menú de Wangs») y manda aviso de copia a `WANGS_MENU_COPY_EMAIL` (default `sarmientod6@gmail.com`, se omite si es el mismo destinatario). Respuestas: `{ok:true, mensaje:"Menú enviado a <correo>"}` · 400 `correo_invalido` · 401 secreto inválido.
+
+### Power FM — registro de oyentes (agente Regina)
+Código en `powerfm.js`. Todas con header `X-Lead-Secret`.
+- `POST /webhooks/powerfm/buscar-oyente` — body: `caller_number` (System param de xAI, opcional), `nombre` y `fecha_nacimiento` (plan B, opcionales). Teléfono: solo dígitos, quita `504` si son 11, compara últimos 8 (también lee `X-Caller-Number`). Plan B: fecha exacta + nombre tolerante (sin tildes/mayúsculas, puede faltar un apellido, errores leves de voz). Responde `{ok, encontrado, metodo, nombre, primer_nombre, ciudad, telefono_detectado, mensaje}`. Loguea `caller_number` crudo y headers (sin secretos) como `[powerfm] buscar-oyente inbound`.
+- `POST /webhooks/powerfm/registrar-oyente` — body: `nombre_apellido`, `ciudad`, `fecha_nacimiento`, `sexo`, `telefono` (o `caller_number`). Deduplica por teléfono (`ya_registrado:true`). `dry_run:true` valida sin guardar. 400 `datos_incompletos` con `faltan`.
+- `GET /webhooks/powerfm/oyentes.csv` — exportación CSV. `GET /webhooks/powerfm/estado` — tipo de almacenamiento.
+
+Almacenamiento: si existe `POWERFM_SHEET_URL` (+ `POWERFM_SHEET_TOKEN`) usa una Google Sheet vía Apps Script (`docs/powerfm-apps-script.gs`). Si no, archivo `POWERFM_DATA_FILE` (default `./data/powerfm-oyentes.json`), **que se borra en cada deploy/reinicio de Render** si no hay disco persistente. Cada registro queda además en el log `[powerfm] registro {...}`.
