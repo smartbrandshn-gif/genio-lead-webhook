@@ -308,8 +308,10 @@ export function registerPowerFmRoutes(app, { checkSecret, store = createStore(),
     }
     let mensaje;
     if (r.ambiguo) mensaje = "Hay más de un oyente con datos parecidos. Pídele su número de teléfono y vuelve a consultar.";
-    else if (telefono) mensaje = "Número no registrado. Si aún no lo hiciste, pide nombre completo y fecha de nacimiento y vuelve a consultar; si sigue sin aparecer, regístralo.";
-    else if (nombre && fecha) mensaje = "No hay un oyente con ese nombre y fecha. Es oyente nuevo: pide ciudad, sexo y teléfono, confirma y registra.";
+    else if (nombre && fecha) mensaje = telefono
+      ? "No hay un oyente con ese nombre y fecha. Es oyente nuevo: pide ciudad y sexo (el teléfono ya se detectó), confirma y registra."
+      : "No hay un oyente con ese nombre y fecha. Es oyente nuevo: pide ciudad, sexo y teléfono, confirma y registra.";
+    else if (telefono) mensaje = "Número no registrado. Pide nombre completo y fecha de nacimiento y vuelve a consultar; si sigue sin aparecer, regístralo.";
     else mensaje = "No llegó el número de quien llama. Pide nombre completo y fecha de nacimiento y vuelve a consultar.";
     return res.json({ ok: true, encontrado: false, metodo: r.metodo, ambiguo: Boolean(r.ambiguo), telefono_detectado: telefono, mensaje });
   });
