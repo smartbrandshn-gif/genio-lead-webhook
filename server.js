@@ -23,7 +23,7 @@ const CLIENT_LABEL = process.env.CLIENT_LABEL || "Genio Demo";
 
 const CANALES = new Set(["whatsapp", "telefono", "email"]);
 const PLACEHOLDER_BAD =
-  /(sin\s+nombre|sin\s+especificar|n[uú]mero\s+entrante|usuario\s+sin|no\s+proporcionad|unknown|\bn\/?a\b|pendiente|placeholder|\b999999\b|\bcaller[_-]?id\b|\btelefono\b|\bwhatsapp\b|por\s+definir|sin\s+horario|a\s+definir|despu[eé]s|luego|cuando\s+sea)/i;
+  /(sin\s+nombre|sin\s+especificar|n[uú]mero\s+entrante|usuario\s+sin|no\s+proporcionad|unknown|(?<![\p{L}\p{N}_])n\/?a(?![\p{L}\p{N}_])|pendiente|placeholder|(?<![\p{L}\p{N}_])999999(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])caller[_-]?id(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])telefono(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])whatsapp(?![\p{L}\p{N}_])|por\s+definir|sin\s+horario|a\s+definir|despu[eé]s|luego|cuando\s+sea)/iu;
 
 const app = express();
 app.use((req, res, next) => {
@@ -85,6 +85,16 @@ function looksFake(v) {
   if (!s) return true;
   if (PLACEHOLDER_BAD.test(s)) return true;
   return false;
+}
+
+// Pedido/detalle: texto libre (platos con tildes, «Proteína», «Al mojo», comentarios). Solo es «falso» si está vacío
+// o si TODO el valor es un placeholder; nunca rechazar un pedido real por una palabra suelta dentro del texto.
+const PEDIDO_PLACEHOLDER_ONLY =
+  /^(?:n\/?a|ninguno|ning[uú]n|nada|vac[ií]o|pendiente|placeholder|unknown|sin\s+especificar|por\s+definir|a\s+definir|no\s+proporcionad[oa]|-+|\.+)$/iu;
+function looksFakePedido(v) {
+  const s = String(v || "").trim();
+  if (!s) return true;
+  return PEDIDO_PLACEHOLDER_ONLY.test(s);
 }
 
 function pick(map, names) {
@@ -340,7 +350,7 @@ function validatePedido(pedido) {
   if (!pedido.nombre_cliente || looksFake(pedido.nombre_cliente)) {
     return { ok: false, error: "nombre_cliente real es requerido" };
   }
-  if (!pedido.pedido_completo || looksFake(pedido.pedido_completo)) {
+  if (!pedido.pedido_completo || looksFakePedido(pedido.pedido_completo)) {
     return { ok: false, error: "pedido_completo es requerido" };
   }
   if (!pedido.total_pedido || looksFake(pedido.total_pedido)) {
@@ -1196,7 +1206,7 @@ function extractRosso(req) {
     tipo_pedido: rossoTipoPedido(raw("tipo_pedido")),
     _tipoPedidoRaw: raw("tipo_pedido"),
     hora_recogida: String(raw("hora_recogida")),
-    pedido: String(raw("pedido")),
+    pedido: String(raw("pedido") || raw("pedido_completo") || raw("detalle_pedido") || raw("detalle")),
     total: rossoTotal(raw("total")),
     necesita_rtn: rossoBool(raw("necesita_rtn")),
     telefono_confirmado: rossoBool(raw("telefono_confirmado")),
@@ -1293,7 +1303,7 @@ function validateRosso(p) {
   if (p.telefono_confirmado !== true) return "BLOQUEADO: telefono_confirmado debe ser true. Repita el teléfono al cliente en pares, espere que diga sí y vuelva a enviar con telefono_confirmado=true";
   if (p.tipo !== "reserva") {
     if (!p.tipo_pedido) return "tipo_pedido es requerido: 'recoger' o 'comer en el restaurante'";
-    if (!p.pedido || looksFake(p.pedido)) return "pedido es requerido";
+    if (!p.pedido || looksFakePedido(p.pedido)) return "pedido es requerido";
     if (p.total == null) return "total es requerido (número en lempiras)";
   }
   if (p.tipo !== "pedido") {
@@ -1559,14 +1569,41 @@ function extractChanchitoHoraLine(s) {
   const src = String(s || "");
   const m = src.match(re);
   if (!m) return { text: src, hora: "" };
-  const hora = m[1].trim();
-  const text = src.replace(re, (full) => (/^[\n;|]/.test(full) ? full[0] : "")).replace(/^\s+/, "");
+  let hora = m[1].trim();
+  let rest = "";
+  // Pedido en una sola línea («Hora: 3 P.M. Gourmet Sandwich …»): la hora es solo el token de hora; el resto son platos.
+  const tm = hora.match(/^(\d{1,2}(?:[:.]\d{2})?\s*(?:(?:a|p)\.?\s*m\.?(?=\s|$|[,;])|hrs?\.?(?=\s|$)|horas(?=\s|$))?|mediod[ií]a|medio\s*d[ií]a)[\s,;]+(?!(?:a|p)\.?\s*m\b)(.*\S.*)$/iu);
+  if (tm && /lempiras|\s[-–—]\s|\bL\s?\d/iu.test(tm[2])) { hora = tm[1].trim(); rest = tm[2].replace(/^[.,;\s]+/, ""); }
+  const text = src.replace(re, (full) => (/^[\n;|]/.test(full) ? full[0] : "") + (rest ? rest : "")).replace(/^\s+/, "");
   return { text, hora };
+}
+
+// Solo El Chanchito: el modelo a veces manda el pedido en un solo párrafo, sin saltos de línea, ej.
+// «Gourmet Sandwich con Papas - 295 lempiras, Proteina: Pulled Pork. Yuca con Chicharron - 270 lempiras, Proteina: Costilla Frita, Yuca: Al mojo.»
+// Se parte en platos (por «. » o «; ») y cada «Opción: valor» pasa a su propia línea «•Opción: valor».
+function splitChanchitoSingleLine(s) {
+  const src = String(s || "").trim();
+  if (!src || /\n/.test(src)) return src;
+  const dishes = src
+    .split(/\.\s+(?=[\p{Lu}\d])|;\s*|\s+\|\s+/u)
+    .map((d) => d.trim().replace(/\.$/, "").trim())
+    .filter(Boolean);
+  const out = [];
+  for (const d of dishes) {
+    // Opciones «Clave: valor» separadas por coma o por «•»
+    const parts = d.split(/\s*•\s*|,\s*(?=[^,:]{1,40}:)/u).map((x) => x.trim()).filter(Boolean);
+    if (!parts.length) continue;
+    const [head, ...opts] = parts;
+    out.push(head);
+    for (const o of opts) out.push(`•${o}`);
+  }
+  return out.length ? out.join("\n") : src;
 }
 
 // Solo El Chanchito: "Pedido programado:" + opcional "Hora: …". El resto es la misma plantilla que El Manzano.
 function parseChanchitoPedido(raw) {
-  let s = String(raw || "").trim();
+  // Saltos de línea que llegan escapados («\\n» literal) se tratan como Enter
+  let s = String(raw || "").replace(/(?:\\r)?\\n/g, "\n").trim();
   let tipo = "";
   const ci = s.indexOf(":");
   if (ci > 0 && ci <= 60) {
@@ -1577,10 +1614,15 @@ function parseChanchitoPedido(raw) {
     }
   }
   const horaParsed = extractChanchitoHoraLine(s);
-  s = horaParsed.text;
+  s = splitChanchitoSingleLine(horaParsed.text);
   const parsed = parseManzanoPedido(s);
   if (tipo) parsed.tipo = tipo;
   parsed.horaRecogida = horaParsed.hora;
+  // Nunca dejar el detalle vacío: si no quedó ningún renglón, mostrar el texto recibido tal cual (línea por línea).
+  if (!parsed.items.some((x) => String(x || "").trim())) {
+    const rawLines = String(raw || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    parsed.items = s.trim() && rawLines.length ? rawLines : ["(pedido sin detalle: revisar la llamada)"];
+  }
   return parsed;
 }
 
@@ -2439,6 +2481,9 @@ if (isDirectRun) {
 
 export {
   applyChanchitoPedidoFields,
+  looksFake,
+  looksFakePedido,
+  validateRosso,
   applyRossoTipoRoute,
   buildRossoEmail,
   chanchitoTipoPedido,
