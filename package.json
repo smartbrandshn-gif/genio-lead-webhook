@@ -7,9 +7,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/chanchito-programado.test.mjs"
+    "test": "node test/chanchito-programado.test.mjs && node test/powerfm.test.mjs"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

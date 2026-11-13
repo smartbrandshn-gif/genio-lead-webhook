@@ -4,3 +4,4 @@ node_modules/
 .DS_Store
 RENDER_SECRET.txt
 .mail-dry-run/
+data/
