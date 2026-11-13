@@ -2465,6 +2465,111 @@ app.post("/webhooks/manzano/enviar-menu", async (req, res) => {
   }
 });
 
+/* ---------- El Chanchito: enviar menú por correo ----------
+ * POST /webhooks/chanchito/enviar-menu  (header X-Lead-Secret)
+ * Body: correo (requerido; admite forma hablada), nombre (opcional), dry_run (opcional: valida sin enviar).
+ * Envía assets/chanchito/menu-el-chanchito.pdf adjunto. Copia opcional a CHANCHITO_MENU_COPY_EMAIL.
+ */
+const CHANCHITO_MENU_COPY_EMAIL = (process.env.CHANCHITO_MENU_COPY_EMAIL || "").trim();
+const CHANCHITO_MENU_FROM = `"El Chanchito" <${DEMO_FROM_EMAIL}>`;
+const CHANCHITO_MENU_PDF_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "chanchito", "menu-el-chanchito.pdf");
+const CHANCHITO_MENU_PDF_FILENAME = "Menu-El-Chanchito.pdf";
+const CHANCHITO_MENU_SUBJECT = "Menú El Chanchito";
+
+function isTruthyFlag(v) {
+  if (v === true || v === 1) return true;
+  return /^(?:1|true|s[ií]|yes|on)$/i.test(String(v ?? "").trim());
+}
+
+function buildChanchitoMenuEmail(nombre) {
+  const { card, shell } = EMAIL_UI;
+  const F = "font-family:Arial,Helvetica,sans-serif;";
+  const p = (t) => `<div style="${F}font-size:14px;color:#111827;line-height:1.6;padding:6px 0">${t}</div>`;
+  const saludo = nombre ? `Hola ${nombre}` : "Hola";
+  const body = [
+    p(`${escHtml(saludo)},`),
+    p("Gracias por llamar a <b>El Chanchito</b>. Aquí tienes nuestro menú, adjunto en este correo."),
+    p("Cuando quieras hacer tu pedido o reservar tu mesa, solo llámanos de nuevo y con gusto te atendemos."),
+    p("¡Buen provecho!<br><b>El Chanchito</b>"),
+  ].join("");
+  const html = shell("Menú El Chanchito", "", [card("Tu menú", body)]);
+  const text = [
+    `${saludo},`,
+    "",
+    "Gracias por llamar a El Chanchito. Aquí tienes nuestro menú, adjunto en este correo.",
+    "Cuando quieras hacer tu pedido o reservar tu mesa, solo llámanos de nuevo y con gusto te atendemos.",
+    "",
+    "¡Buen provecho!",
+    "El Chanchito",
+  ].join("\n");
+  return { subject: CHANCHITO_MENU_SUBJECT, text, html };
+}
+
+function buildChanchitoMenuCopyEmail({ nombre, correo }) {
+  const ts = guatemalaTimestamp();
+  const { kvTable, card, shell } = EMAIL_UI;
+  const rows = [["Nombre", nombre || "(no indicado)"], ["Correo", correo], ["Documento", CHANCHITO_MENU_PDF_FILENAME]];
+  const html = shell(ts, "", [card("Menú enviado — El Chanchito", kvTable(rows))]);
+  const text = ["Menú enviado — El Chanchito", "", `Fecha (America/Guatemala): ${ts}`, ...rows.map(([k, v]) => `${k}: ${v}`)].join("\n");
+  return { subject: `Copia: menú de El Chanchito enviado a ${nombre || correo}`, text, html };
+}
+
+app.post("/webhooks/chanchito/enviar-menu", async (req, res) => {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+
+  const merged = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  delete merged.secret;
+  const dryRun = isTruthyFlag(merged.dry_run ?? merged.dryRun);
+  const nombre = pick(merged, ["nombre", "name"]).replace(/\s+/g, " ").replace(/[<>]/g, "").slice(0, 80).trim();
+  const correoRaw = pick(merged, ["correo", "email", "correo_electronico"]);
+  console.log("[chanchito-menu] inbound", { bodyKeys: Object.keys(req.body || {}), nombreLen: nombre.length, tieneCorreo: Boolean(correoRaw), dryRun });
+
+  const norm = normalizeCorreoHablado(correoRaw);
+  if (!norm.ok) {
+    return res.status(400).json({ ok: false, error: "correo_invalido", mensaje: "El correo no es válido; pídele a la persona que lo repita despacio (un solo correo)." });
+  }
+  const correo = norm.correo;
+
+  let pdf;
+  try {
+    pdf = fs.readFileSync(CHANCHITO_MENU_PDF_PATH);
+  } catch (err) {
+    console.error("[chanchito-menu] PDF no disponible", err?.message || err);
+    return res.status(500).json({ ok: false, error: "pdf_no_disponible" });
+  }
+
+  if (dryRun) {
+    return res.json({ ok: true, dry_run: true, enviado: false, correo, pdf: CHANCHITO_MENU_PDF_FILENAME, pdf_bytes: pdf.length, mensaje: `Prueba: el menú se enviaría a ${correo}` });
+  }
+
+  try {
+    const transport = createTransport();
+    const { subject, text, html } = buildChanchitoMenuEmail(nombre);
+    const info = await transport.sendMail({
+      from: CHANCHITO_MENU_FROM,
+      to: correo,
+      subject,
+      text,
+      html,
+      attachments: [{ filename: CHANCHITO_MENU_PDF_FILENAME, content: pdf, contentType: "application/pdf" }],
+    });
+    console.log(`[chanchito-menu] enviado id=${info.messageId}`);
+    if (CHANCHITO_MENU_COPY_EMAIL && CHANCHITO_MENU_COPY_EMAIL.toLowerCase() !== correo) {
+      try {
+        const c = buildChanchitoMenuCopyEmail({ nombre, correo });
+        await transport.sendMail({ from: GENIO_NOTIFICACIONES_FROM, to: CHANCHITO_MENU_COPY_EMAIL, subject: c.subject, text: c.text, html: c.html });
+      } catch (e) {
+        console.error("[chanchito-menu] copia falló", e?.message || e);
+      }
+    }
+    return res.json({ ok: true, mensaje: `Menú enviado a ${correo}` });
+  } catch (err) {
+    console.error("[chanchito-menu] SMTP", err?.message || err);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: err?.message || String(err) });
+  }
+});
+
 // Power FM / Regina — registro de oyentes (ver powerfm.js). Antes del 404.
 registerPowerFmRoutes(app, { checkSecret });
 
@@ -2480,7 +2585,10 @@ if (isDirectRun) {
 }
 
 export {
+  app,
   applyChanchitoPedidoFields,
+  buildChanchitoMenuEmail,
+  normalizeCorreoHablado,
   looksFake,
   looksFakePedido,
   validateRosso,
