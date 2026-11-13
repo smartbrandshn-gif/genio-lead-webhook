@@ -7,7 +7,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/chanchito-programado.test.mjs && node test/powerfm.test.mjs"
+    "test": "node test/chanchito-programado.test.mjs && node test/chanchito-pedido-v11.test.mjs && node test/powerfm.test.mjs"
   },
   "engines": {
     "node": ">=18"
