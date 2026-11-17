@@ -2005,6 +2005,120 @@ app.post("/webhooks/pedido/:sucursal/cancelacion", fincaZunaRoute("cancelacion")
 app.post("/webhooks/pedido-rosso/:sucursal/reserva", fincaZunaRoute("reserva"));
 app.post("/webhooks/pedido/:sucursal/reserva", fincaZunaRoute("reserva"));
 
+/* ---------- Finca Zuna: enviar ubicación / cuentas AL CLIENTE ----------
+ * POST /webhooks/pedido/FincaZuna/info  (también /webhooks/pedido-rosso/FincaZuna/info)  header X-Lead-Secret
+ * Body: correo_electronico (requerido, con «@»), tipo (ubicacion | cuentas | ambos), nombre (opcional), dry_run (opcional).
+ * Correo informativo al cliente (NO es confirmación de reserva). Dedupe 10 min por correo+tipo.
+ * Debe registrarse ANTES de la ruta genérica /webhooks/pedido/:sucursal/:tipo.
+ */
+const FINCAZUNA_UBICACION = {
+  texto: "Finca Zuna, La Esperanza, Intibucá (a 1,700 msnm)",
+  link: "https://maps.google.com/?q=14.291059,-88.092522",
+};
+const FINCAZUNA_CUENTAS = [
+  "BAC, Mary Cristiane Sibrian Kawas, Cédula 0101198200837, Cuenta de cheques en lempiras, No. 203350121",
+  "BAC, Mary Cristiane Sibrian Kawas, Cédula 0101198200837, Cuenta de ahorro en dólares, No. 201203855",
+  "Banco de Occidente, a nombre de Finca Zuna, Cuenta en lempiras, No. 212470081500",
+];
+const FINCAZUNA_NOTA_ADELANTO = "Para reservar se solicita un adelanto del 50%. La reserva se confirma una vez realizado el pago.";
+const FINCAZUNA_INFO_SUBJECT = {
+  ubicacion: "Finca Zuna – Ubicación",
+  cuentas: "Finca Zuna – Cuentas para depósito",
+  ambos: "Finca Zuna – Ubicación y cuentas",
+};
+
+function fincaZunaInfoTipo(raw) {
+  const s = String(raw || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!s) return "";
+  if (s === "ambos" || s === "ambas" || (s.includes("ubica") && s.includes("cuenta"))) return "ambos";
+  if (s.startsWith("ubica") || s === "direccion" || s === "mapa") return "ubicacion";
+  if (s.startsWith("cuenta") || s === "pago" || s === "deposito") return "cuentas";
+  return "";
+}
+
+function buildFincaZunaInfoEmail(nombre, tipo) {
+  const { card, shell } = EMAIL_UI;
+  const F = "font-family:Arial,Helvetica,sans-serif;";
+  const p = (t) => `<div style="${F}font-size:14px;color:#111827;line-height:1.6;padding:6px 0">${t}</div>`;
+  const saludo = nombre ? `Hola ${nombre}` : "Hola";
+  const conUbic = tipo === "ubicacion" || tipo === "ambos";
+  const conCtas = tipo === "cuentas" || tipo === "ambos";
+  const cards = [card("Finca Zuna", p(`${escHtml(saludo)},`) + p("Gracias por comunicarse con <b>Finca Zuna</b>. Esta es la información que nos solicitó."))];
+  const text = [`${saludo},`, "", "Gracias por comunicarse con Finca Zuna. Esta es la información que nos solicitó.", ""];
+  if (conUbic) {
+    cards.push(card("Ubicación", p(escHtml(FINCAZUNA_UBICACION.texto)) + p(`<a href="${FINCAZUNA_UBICACION.link}" style="color:#166534;font-weight:bold">Abrir en Google Maps</a><br><span style="font-size:12px;color:#6b7280">${FINCAZUNA_UBICACION.link}</span>`)));
+    text.push("UBICACIÓN", FINCAZUNA_UBICACION.texto, FINCAZUNA_UBICACION.link, "");
+  }
+  if (conCtas) {
+    const lis = FINCAZUNA_CUENTAS.map((c, i) => p(`${i + 1}) ${escHtml(c)}`)).join("");
+    cards.push(card("Cuentas para depósito", lis + p(`<b>${escHtml(FINCAZUNA_NOTA_ADELANTO)}</b>`)));
+    text.push("CUENTAS PARA DEPÓSITO", ...FINCAZUNA_CUENTAS.map((c, i) => `${i + 1}) ${c}`), "", FINCAZUNA_NOTA_ADELANTO, "");
+  }
+  cards.push(card("", p("Este correo es solo informativo y no confirma ninguna reserva.") + p("Saludos,<br><b>Finca Zuna</b>")));
+  text.push("Este correo es solo informativo y no confirma ninguna reserva.", "", "Saludos,", "Finca Zuna");
+  const subject = FINCAZUNA_INFO_SUBJECT[tipo];
+  return { subject, text: text.join("\n"), html: shell(subject, "", cards) };
+}
+
+const FINCAZUNA_INFO_RECENT = new Map();
+async function handleFincaZunaInfo(req, res) {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+  if (rossoSucursal(req.params.sucursal || "FincaZuna") !== "FincaZuna") {
+    return res.status(404).json({ ok: false, error: "info solo disponible para FincaZuna" });
+  }
+  const m = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  delete m.secret;
+  const dryRun = isTruthyFlag(m.dry_run ?? m.dryRun);
+  const nombre = pick(m, ["nombre", "name"]).replace(/\s+/g, " ").replace(/[<>]/g, "").slice(0, 80).trim();
+  const correoRaw = pick(m, ["correo_electronico", "correo", "email"]);
+  const tipoRaw = pick(m, ["tipo", "info", "tipo_info"]);
+  console.log("[fincazuna-info] inbound", { tieneCorreo: Boolean(correoRaw), tipo: tipoRaw, nombreLen: nombre.length, dryRun });
+
+  const faltan = [];
+  if (!correoRaw || !correoRaw.includes("@")) faltan.push("correo_electronico (obligatorio, debe contener @)");
+  const tipo = fincaZunaInfoTipo(tipoRaw);
+  if (!tipo) faltan.push("tipo (ubicacion | cuentas | ambos)");
+  if (faltan.length) {
+    return res.status(400).json({ ok: false, error: `Campos requeridos: ${faltan.join("; ")}` });
+  }
+  const norm = normalizeCorreoHablado(correoRaw);
+  if (!norm.ok) {
+    return res.status(400).json({ ok: false, error: "correo_electronico inválido; pídale a la persona que lo repita despacio (un solo correo)." });
+  }
+  const correo = norm.correo;
+
+  const dupKey = `fincazuna-info|${correo}|${tipo}`;
+  const now = Date.now();
+  for (const [k, t] of FINCAZUNA_INFO_RECENT) if (now - t > 10 * 60 * 1000) FINCAZUNA_INFO_RECENT.delete(k);
+  if (FINCAZUNA_INFO_RECENT.has(dupKey)) {
+    return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado a ese correo. No volver a enviar." });
+  }
+
+  const email = buildFincaZunaInfoEmail(nombre, tipo);
+  if (dryRun) {
+    return res.json({ ok: true, dry_run: true, enviado: false, to: correo, tipo, subject: email.subject });
+  }
+  if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+    return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+  }
+  try {
+    const info = await createTransport().sendMail({ from: FINCAZUNA_FROM, to: correo, subject: email.subject, text: email.text, html: email.html });
+    FINCAZUNA_INFO_RECENT.set(dupKey, Date.now());
+    console.log(`[fincazuna-info] ${tipo} enviado id=${info.messageId}`);
+    return res.json({ ok: true, message: `Información enviada (${tipo}) al correo del cliente`, tipo });
+  } catch (e) {
+    console.error("[fincazuna-info] SMTP", e?.message || e);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: e?.message || String(e) });
+  }
+}
+function fincaZunaInfoRoute(req, res, next) {
+  if (rossoSucursal(req.params.sucursal) === "FincaZuna") return handleFincaZunaInfo(req, res);
+  return next(); // otros clientes: sin cambios (ruta genérica :tipo)
+}
+app.post("/webhooks/pedido/:sucursal/info", fincaZunaInfoRoute);
+app.post("/webhooks/pedido-rosso/:sucursal/info", fincaZunaInfoRoute);
+
 const ROSSO_FIXED = {
   "ambos": { tipo: "ambos", tipo_pedido: "comer en el restaurante" },
   "pedido": { tipo: "pedido", tipo_pedido: "recoger" },
@@ -2586,6 +2700,7 @@ if (isDirectRun) {
 
 export {
   app,
+  buildFincaZunaInfoEmail,
   applyChanchitoPedidoFields,
   buildChanchitoMenuEmail,
   normalizeCorreoHablado,
