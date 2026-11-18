@@ -49,3 +49,7 @@ Código en `powerfm.js`. Todas con header `X-Lead-Secret`.
 - `GET /webhooks/powerfm/oyentes.csv` — exportación CSV. `GET /webhooks/powerfm/estado` — tipo de almacenamiento.
 
 Almacenamiento: si existe `POWERFM_SHEET_URL` (+ `POWERFM_SHEET_TOKEN`) usa una Google Sheet vía Apps Script (`docs/powerfm-apps-script.gs`). Si no, archivo `POWERFM_DATA_FILE` (default `./data/powerfm-oyentes.json`), **que se borra en cada deploy/reinicio de Render** si no hay disco persistente. Cada registro queda además en el log `[powerfm] registro {...}`.
+
+### Transmundo — consulta de Carlota
+`POST /webhooks/pedido/Transmundo/consulta` (también `/webhooks/pedido-rosso/Transmundo/consulta`; header `X-Lead-Secret`). Body JSON: `nombre`, `telefono`, `telefono_confirmado` (boolean, debe ser true), `agente` (nombre del agente o `"Nuevo cliente"`), `tipo_cliente` (`frecuente` | `nuevo`), `consulta`. Opcionales: `origen`, `destino`, `fecha_ida`, `fecha_regreso`, `adultos`, `ninos`, `visa`, `vacuna_fiebre_amarilla`.
+Por defecto (`TRANSMUNDO_ROUTE_TO_AGENTS` apagado) **todos** los correos van solo a `TRANSMUNDO_TO_EMAIL` (default `sarmientod6@gmail.com`), con From `"Transmundo Consultas" <genionotificaciones@gmail.com>` y asunto `Transmundo – Consulta para [agente] – [nombre]`. El cuerpo indica a qué correo real del agente iría. El mapa de agentes (`@transmundohn.com`) solo se usa como destino cuando `TRANSMUNDO_ROUTE_TO_AGENTS=1`. Clientes nuevos sin `TRANSMUNDO_NEW_CLIENT_EMAIL` siguen yendo a la bandeja de pruebas. `dry_run=true` valida y arma el correo sin enviarlo.

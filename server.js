@@ -2119,6 +2119,249 @@ function fincaZunaInfoRoute(req, res, next) {
 app.post("/webhooks/pedido/:sucursal/info", fincaZunaInfoRoute);
 app.post("/webhooks/pedido-rosso/:sucursal/info", fincaZunaInfoRoute);
 
+/* ---------- Transmundo: consulta de Carlota ----------
+ * POST /webhooks/pedido/Transmundo/consulta
+ * (también /webhooks/pedido-rosso/Transmundo/consulta)
+ * Header X-Lead-Secret.
+ * En pruebas (TRANSMUNDO_ROUTE_TO_AGENTS apagado, valor por defecto) todos los
+ * correos van SOLO a TRANSMUNDO_TO_EMAIL (sarmientod6@gmail.com). El cuerpo
+ * indica a qué correo del agente iría cuando se active el ruteo.
+ * Debe registrarse ANTES de la ruta genérica /webhooks/pedido/:sucursal/:tipo.
+ */
+const TRANSMUNDO_TO_EMAIL = process.env.TRANSMUNDO_TO_EMAIL || "sarmientod6@gmail.com";
+const TRANSMUNDO_FROM = `"Transmundo Consultas" <genionotificaciones@gmail.com>`;
+const TRANSMUNDO_AGENTS = [
+  { name: "Kelly Gudiel", email: "kelly.gudiel@transmundohn.com", aliases: ["kelly", "kelly gudiel", "gudiel"] },
+  { name: "Perla Dubón", email: "perla.dubon@transmundohn.com", aliases: ["perla", "perla dubon", "dubon"] },
+  { name: "Dulce Ferrera", email: "dulce.ferrera@transmundohn.com", aliases: ["dulce", "dulce ferrera", "ferrera"] },
+  { name: "Maureen Zúñiga", email: "maureen.zuniga@transmundohn.com", aliases: ["maureen", "maureen zuniga", "zuniga"] },
+  { name: "Edwin Rivera", email: "edwin.rivera@transmundohn.com", aliases: ["edwin", "edwin rivera", "rivera"] },
+  { name: "María José Baltodano", email: "mariajose.baltodano@transmundohn.com", aliases: ["maria", "maria jose", "maria jose baltodano", "mariajose", "mariajose baltodano", "baltodano"] },
+  { name: "Thalía López", email: "thalia.lopez@transmundohn.com", aliases: ["thalia", "thalia lopez", "lopez"] },
+  { name: "Jeimmy Márquez", email: "jeimmy.marquez@transmundohn.com", aliases: ["jeimmy", "jeimmy marquez", "marquez"] },
+];
+
+function transmundoNorm(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+function isTransmundoSucursal(raw) {
+  const s = transmundoNorm(raw).replace(/[\s_-]+/g, "");
+  return s === "transmundo" || s.includes("transmundo");
+}
+function transmundoRouteToAgentsEnabled() {
+  return isTruthyFlag(process.env.TRANSMUNDO_ROUTE_TO_AGENTS);
+}
+function resolveTransmundoAgente(raw) {
+  const s = transmundoNorm(raw);
+  if (!s) return null;
+  if (s === "nuevo cliente" || s === "nuevo" || s === "clientes nuevos") {
+    return { name: "Nuevo cliente", email: "", tipoHint: "nuevo" };
+  }
+  const hits = TRANSMUNDO_AGENTS.filter((a) => transmundoNorm(a.name) === s || a.aliases.includes(s));
+  if (hits.length === 1) return { name: hits[0].name, email: hits[0].email, tipoHint: "frecuente" };
+  return null;
+}
+
+function extractTransmundo(req) {
+  const m = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  const raw = (k) => (m[k] == null ? "" : typeof m[k] === "boolean" || typeof m[k] === "number" ? m[k] : String(m[k]).trim());
+  const num = (v) => {
+    if (v === "" || v == null) return null;
+    const n = Number(String(v).replace(/[^\d.-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  };
+  const tipoRaw = transmundoNorm(raw("tipo_cliente"));
+  const tipo_cliente = tipoRaw.includes("frecuente") ? "frecuente" : (tipoRaw.includes("nuevo") ? "nuevo" : "");
+  return {
+    nombre: String(raw("nombre")),
+    telefono: rossoTelefono(raw("telefono")) || String(raw("telefono")),
+    telefono_confirmado: rossoBool(raw("telefono_confirmado")),
+    agente: String(raw("agente")),
+    tipo_cliente,
+    consulta: String(raw("consulta")),
+    origen: String(raw("origen")),
+    destino: String(raw("destino")),
+    fecha_ida: String(raw("fecha_ida")),
+    fecha_regreso: String(raw("fecha_regreso")),
+    adultos: num(raw("adultos")),
+    ninos: num(raw("ninos") !== "" ? raw("ninos") : raw("niños")),
+    visa: String(raw("visa")),
+    vacuna_fiebre_amarilla: String(raw("vacuna_fiebre_amarilla")),
+  };
+}
+
+function validateTransmundo(p) {
+  if (!p.nombre || looksFake(p.nombre)) return "nombre es requerido";
+  const telDigits = String(p.telefono || "").replace(/\D/g, "");
+  if (!telDigits || telDigits.length < 7) return "telefono es requerido";
+  if (p.telefono_confirmado !== true) {
+    return "BLOQUEADO: telefono_confirmado debe ser true. Repita el teléfono al cliente en pares, espere que diga sí y vuelva a enviar con telefono_confirmado=true";
+  }
+  if (!p.agente || looksFake(p.agente)) return "agente es requerido";
+  if (p.tipo_cliente !== "frecuente" && p.tipo_cliente !== "nuevo") {
+    return "tipo_cliente es requerido: frecuente o nuevo";
+  }
+  if (!p.consulta || looksFakePedido(p.consulta)) return "consulta es requerida";
+  return "";
+}
+
+function transmundoRouting(p, resolved) {
+  const newClientInbox = String(process.env.TRANSMUNDO_NEW_CLIENT_EMAIL || "").trim();
+  let intendedEmail = "";
+  let intendedLabel = "";
+  if (resolved?.email) {
+    intendedEmail = resolved.email;
+    intendedLabel = resolved.email;
+  } else if (resolved?.name === "Nuevo cliente" || p.tipo_cliente === "nuevo") {
+    intendedEmail = newClientInbox;
+    intendedLabel = newClientInbox || "sin asignar (aún no hay correo de clientes nuevos)";
+  } else {
+    intendedEmail = "";
+    intendedLabel = `agente no reconocido (${p.agente}); no hay correo de destino`;
+  }
+  const routeOn = transmundoRouteToAgentsEnabled();
+  const toEmail = (routeOn && intendedEmail) ? intendedEmail : TRANSMUNDO_TO_EMAIL;
+  return { toEmail, intendedEmail, intendedLabel, routeOn };
+}
+
+function buildTransmundoEmail(p, routing, resolved) {
+  const ts = guatemalaTimestamp();
+  const who = String(p.nombre || "").trim() || "cliente";
+  const agenteNombre = resolved?.name || String(p.agente || "").trim();
+  const subject = `Transmundo – Consulta para ${agenteNombre} – ${who}`;
+  const telFmt = EMAIL_UI.fmtTel(p.telefono);
+  const tipoLabel = p.tipo_cliente === "frecuente" ? "Cliente frecuente" : "Cliente nuevo";
+  const lines = [
+    "Consulta — Transmundo",
+    "",
+    `Fecha (America/Tegucigalpa): ${ts}`,
+    `Nombre: ${p.nombre}`,
+    `Teléfono: ${p.telefono}`,
+    `Tipo de cliente: ${tipoLabel}`,
+    `Agente: ${agenteNombre}`,
+    `Consulta: ${p.consulta}`,
+  ];
+  const kv = [
+    ["Nombre", p.nombre],
+    ["Teléfono", telFmt],
+    ["Tipo de cliente", tipoLabel],
+    ["Agente", agenteNombre],
+    ["Consulta", p.consulta],
+  ];
+  const optionals = [
+    ["Origen", p.origen],
+    ["Destino", p.destino],
+    ["Fecha de ida", p.fecha_ida],
+    ["Fecha de regreso", p.fecha_regreso],
+    ["Adultos", p.adultos == null ? "" : String(p.adultos)],
+    ["Niños", p.ninos == null ? "" : String(p.ninos)],
+    ["Visa", p.visa],
+    ["Vacuna fiebre amarilla", p.vacuna_fiebre_amarilla],
+  ];
+  for (const [label, value] of optionals) {
+    if (String(value || "").trim()) {
+      lines.push(`${label}: ${value}`);
+      kv.push([label, String(value)]);
+    }
+  }
+  const routingNote = routing.routeOn && routing.toEmail === routing.intendedEmail
+    ? `Este correo se envió al agente: ${routing.intendedLabel}`
+    : `MODO PRUEBA: este correo se envió a ${routing.toEmail}. El destinatario real del agente sería: ${routing.intendedLabel}`;
+  lines.push("", routingNote);
+  kv.push(["Destinatario real del agente", routing.intendedLabel]);
+  if (!(routing.routeOn && routing.toEmail === routing.intendedEmail)) {
+    kv.push(["Enviado en prueba a", routing.toEmail]);
+  }
+
+  const { kvTable, card } = EMAIL_UI;
+  const cards = [card("Consulta — Transmundo", kvTable(kv))];
+  const html = EMAIL_UI.shell(ts, "", cards);
+  return { subject, text: lines.join("\n"), html };
+}
+
+const TRANSMUNDO_RECENT = new Map();
+async function handleTransmundoConsulta(req, res) {
+  const auth = checkSecret(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+  if (!isTransmundoSucursal(req.params.sucursal || "Transmundo")) {
+    return res.status(404).json({ ok: false, error: "consulta solo disponible para Transmundo" });
+  }
+
+  const m = { ...req.query, ...(req.body && typeof req.body === "object" ? req.body : {}) };
+  const dryRun = isTruthyFlag(m.dry_run ?? m.dryRun);
+  const p = extractTransmundo(req);
+  const resolved = resolveTransmundoAgente(p.agente);
+  console.log("[transmundo-consulta] inbound", {
+    tipo_cliente: p.tipo_cliente,
+    agenteResuelto: resolved?.name || "",
+    tieneConsulta: Boolean(p.consulta),
+    dryRun,
+  });
+  const err = validateTransmundo(p);
+  if (err) return res.status(400).json({ ok: false, error: err });
+
+  const routing = transmundoRouting(p, resolved);
+  const dupKey = [
+    "Transmundo",
+    p.tipo_cliente,
+    String(p.telefono).replace(/\D/g, ""),
+    resolved?.name || p.agente,
+    String(p.consulta).slice(0, 80),
+    p.destino || "",
+    p.fecha_ida || "",
+  ].join("|").toLowerCase();
+  const now = Date.now();
+  for (const [k, t] of TRANSMUNDO_RECENT) if (now - t > 10 * 60 * 1000) TRANSMUNDO_RECENT.delete(k);
+  if (TRANSMUNDO_RECENT.has(dupKey)) {
+    return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
+  }
+
+  const email = buildTransmundoEmail(p, routing, resolved);
+  if (dryRun || process.env.TRANSMUNDO_DRY_RUN === "1") {
+    return res.json({
+      ok: true,
+      dry_run: true,
+      enviado: false,
+      to: routing.toEmail,
+      destinatario_real: routing.intendedLabel,
+      route_to_agents: routing.routeOn,
+      subject: email.subject,
+      text: email.text,
+    });
+  }
+  if (!SMTP_USER || !SMTP_APP_PASSWORD) {
+    return res.status(500).json({ ok: false, error: "SMTP no configurado" });
+  }
+  try {
+    const info = await createTransport().sendMail({
+      from: TRANSMUNDO_FROM,
+      to: routing.toEmail,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    });
+    TRANSMUNDO_RECENT.set(dupKey, Date.now());
+    console.log(`[transmundo-consulta] enviado id=${info.messageId}`);
+    return res.json({
+      ok: true,
+      message: "Consulta enviada",
+      sucursal: "Transmundo",
+      messageId: info.messageId,
+      to: routing.toEmail,
+    });
+  } catch (e) {
+    console.error("[transmundo-consulta] SMTP", e?.message || e);
+    return res.status(502).json({ ok: false, error: "No se pudo enviar el email", detail: e?.message || String(e) });
+  }
+}
+
+function transmundoConsultaRoute(req, res) {
+  if (isTransmundoSucursal(req.params.sucursal)) return handleTransmundoConsulta(req, res);
+  return res.status(404).json({ ok: false, error: "consulta solo disponible para Transmundo" });
+}
+app.post("/webhooks/pedido/:sucursal/consulta", transmundoConsultaRoute);
+app.post("/webhooks/pedido-rosso/:sucursal/consulta", transmundoConsultaRoute);
+
 const ROSSO_FIXED = {
   "ambos": { tipo: "ambos", tipo_pedido: "comer en el restaurante" },
   "pedido": { tipo: "pedido", tipo_pedido: "recoger" },
@@ -2701,6 +2944,9 @@ if (isDirectRun) {
 export {
   app,
   buildFincaZunaInfoEmail,
+  buildTransmundoEmail,
+  resolveTransmundoAgente,
+  transmundoRouting,
   applyChanchitoPedidoFields,
   buildChanchitoMenuEmail,
   normalizeCorreoHablado,
