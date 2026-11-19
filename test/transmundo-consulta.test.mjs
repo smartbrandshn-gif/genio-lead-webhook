@@ -33,8 +33,9 @@ try {
   assert.equal(j.destinatario_real, "kelly.gudiel@transmundohn.com");
   assert.equal(j.route_to_agents, false);
   assert.equal(j.subject, "Consulta – Ana López");
-  assert.match(j.text, /OTRA CONSULTA/);
-  assert.match(j.text, /Detalle: Quiere cotizar un viaje familiar/);
+  assert.match(j.text, /SOLICITUD DEL CLIENTE/);
+  assert.match(j.text, /Quiere cotizar un viaje familiar/);
+  assert.doesNotMatch(j.text, /Detalle:/);
   assert.doesNotMatch(j.text, /Agente:|Tipo de cliente:/);
   assert.match(j.text, /MODO PRUEBA/);
   assert.match(j.text, /kelly\.gudiel@transmundohn\.com/);
@@ -71,7 +72,7 @@ try {
   assert.equal(n.destinatario_real, "sin asignar (aún no hay correo de clientes nuevos)");
   assert.match(n.text, /Número de personas: 3/);
   assert.match(n.text, /Vacuna de la fiebre amarilla: Sí/);
-  assert.doesNotMatch(n.text, /OTRA CONSULTA/);
+  assert.doesNotMatch(n.text, /OTRA CONSULTA|SOLICITUD DEL CLIENTE/);
   assert.match(n.text, /Buenos Aires/);
 
   // Campos desglosados nuevos
@@ -90,7 +91,7 @@ try {
   for (const re of [/Tipo de boleto: Ida y vuelta/, /Fecha de regreso: 7 de enero/, /Infantes menores de 2 años: No/,
     /Tipo de vuelo: Directo/, /Horario preferido: Mañana/, /Maleta documentada: Sí/,
     /Personas con maleta documentada: 2 de 3/, /Asiento: Pasillo/, /Visa vigente de EE\. UU\.: Sí/]) assert.match(d.text, re);
-  assert.doesNotMatch(d.text, /Vacuna|OTRA CONSULTA|Consulta:/);
+  assert.doesNotMatch(d.text, /Vacuna|OTRA CONSULTA|SOLICITUD DEL CLIENTE|Consulta:/);
 
   // Solo ida oculta la fecha de regreso
   const e = buildTransmundoEmail({ nombre: "X", telefono: "99999999", tipo_consulta: "boleto", tipo_boleto: "solo ida",
@@ -98,6 +99,26 @@ try {
     { routeOn: false, toEmail: "sarmientod6@gmail.com", intendedEmail: "", intendedLabel: "x" }, null);
   assert.doesNotMatch(e.text, /Fecha de regreso/);
   assert.match(e.html, /Modo prueba/);
+
+  // Solicitud del cliente (no boleto): párrafo a ancho completo, otra_consulta con fallback
+  const solicitud = "Quiere cambiar la fecha de regreso de su boleto San Pedro Sula–Madrid del 10 al 17 de enero para 2 personas; pregunta si hay penalidad.";
+  const o = buildTransmundoEmail({
+    nombre: "Carlos Pérez", telefono: "31905551", tipo_cliente: "nuevo", agente: "Nuevo cliente",
+    tipo_consulta: "otra", otra_consulta: solicitud, consulta: "resumen breve",
+  }, { routeOn: false, toEmail: "sarmientod6@gmail.com", intendedEmail: "", intendedLabel: "sin asignar (aún no hay correo de clientes nuevos)" }, null);
+  assert.equal(o.subject, "Consulta – Carlos Pérez");
+  assert.match(o.text, /SOLICITUD DEL CLIENTE/);
+  assert.match(o.text, /Quiere cambiar la fecha de regreso/);
+  assert.doesNotMatch(o.text, /Detalle:|Compra de boleto|Tipo de boleto:|VIAJE/);
+  assert.match(o.html, /SOLICITUD DEL CLIENTE/);
+  assert.doesNotMatch(o.html, />Detalle</);
+  assert.doesNotMatch(o.html, /colspan="2"[^>]*>resumen breve/);
+  const escaped = buildTransmundoEmail({
+    nombre: "Ana", telefono: "99881234", tipo_consulta: "otra",
+    otra_consulta: 'Cambio <urgente> & "penalidad"\nsegunda línea',
+  }, { routeOn: false, toEmail: "sarmientod6@gmail.com", intendedEmail: "", intendedLabel: "x" }, null);
+  assert.match(escaped.html, /Cambio &lt;urgente&gt; &amp; &quot;penalidad&quot;<br>segunda línea/);
+  assert.doesNotMatch(escaped.html, /<urgente>/);
 
   const other = await fetch(`http://127.0.0.1:${srv.address().port}/webhooks/pedido/Manzano/consulta`, {
     method: "POST",

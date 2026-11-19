@@ -2296,7 +2296,14 @@ function transmundoPersonasMaleta(p, personas) {
 function transmundoEmailHtml(title, ts, sections, footerNote) {
   const F = "font-family:Helvetica,Arial,sans-serif;";
   const G = "#1d6b35";
-  const row = (k, v, last) => `<tr><td style="${F}padding:7px 4px;font-size:14px;color:#666666;width:46%;vertical-align:top;${last ? "" : "border-bottom:1px solid #eeeeee;"}">${escHtml(k)}</td><td style="${F}padding:7px 4px;font-size:14px;color:#222222;font-weight:bold;vertical-align:top;${last ? "" : "border-bottom:1px solid #eeeeee;"}">${escHtml(v).replace(/\n/g, "<br>")}</td></tr>`;
+  const row = (k, v, last) => {
+    const border = last ? "" : "border-bottom:1px solid #eeeeee;";
+    const val = escHtml(v).replace(/\n/g, "<br>");
+    if (!String(k ?? "").trim()) {
+      return `<tr><td colspan="2" style="${F}padding:7px 4px;font-size:14px;color:#222222;line-height:1.5;vertical-align:top;${border}">${val}</td></tr>`;
+    }
+    return `<tr><td style="${F}padding:7px 4px;font-size:14px;color:#666666;width:46%;vertical-align:top;${border}">${escHtml(k)}</td><td style="${F}padding:7px 4px;font-size:14px;color:#222222;font-weight:bold;vertical-align:top;${border}">${val}</td></tr>`;
+  };
   const sec = ([t, rows]) => `<tr><td style="padding:0 22px">
     <div style="${F}color:${G};font-size:11px;font-weight:bold;letter-spacing:1px;margin:16px 0 6px;border-bottom:2px solid ${G};padding-bottom:4px">${escHtml(t.toUpperCase())}</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">${rows.map(([k, v], i) => row(k, v, i === rows.length - 1)).join("")}</table>
@@ -2355,7 +2362,7 @@ function buildTransmundoEmail(p, routing, resolved) {
       ["Vacuna de la fiebre amarilla", transmundoSiNo(p.vacuna_fiebre_amarilla)],
     ]);
   } else {
-    add("Otra consulta", [["Detalle", String(p.otra_consulta || "").trim() || p.consulta]]);
+    add("Solicitud del cliente", [["", String(p.otra_consulta || "").trim() || p.consulta]]);
   }
 
   const sentToAgent = routing.routeOn && routing.toEmail === routing.intendedEmail;
@@ -2366,7 +2373,7 @@ function buildTransmundoEmail(p, routing, resolved) {
   const lines = [subject, "", `Fecha (America/Tegucigalpa): ${ts}`];
   for (const [t, rows] of sections) {
     lines.push("", t.toUpperCase());
-    for (const [k, v] of rows) lines.push(`${k}: ${v}`);
+    for (const [k, v] of rows) lines.push(String(k ?? "").trim() ? `${k}: ${v}` : v);
   }
   const routingNote = sentToAgent
     ? `Este correo se envió al agente: ${routing.intendedLabel}`
