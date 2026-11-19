@@ -2172,7 +2172,7 @@ function extractTransmundo(req) {
   };
   const tipoRaw = transmundoNorm(raw("tipo_cliente"));
   const tipo_cliente = tipoRaw.includes("frecuente") ? "frecuente" : (tipoRaw.includes("nuevo") ? "nuevo" : "");
-  return {
+  const p = {
     nombre: String(raw("nombre")),
     telefono: rossoTelefono(raw("telefono")) || String(raw("telefono")),
     telefono_confirmado: rossoBool(raw("telefono_confirmado")),
@@ -2187,7 +2187,31 @@ function extractTransmundo(req) {
     ninos: num(raw("ninos") !== "" ? raw("ninos") : raw("niños")),
     visa: String(raw("visa")),
     vacuna_fiebre_amarilla: String(raw("vacuna_fiebre_amarilla")),
+    // Campos desglosados (opcionales) del flujo de Carlota
+    tipo_consulta: "",
+    tipo_boleto: String(raw("tipo_boleto")),
+    personas: String(raw("personas")),
+    infantes: String(raw("infantes")),
+    tipo_vuelo: String(raw("tipo_vuelo")),
+    horario: String(raw("horario")),
+    maleta_documentada: String(raw("maleta_documentada")),
+    personas_maleta: String(raw("personas_maleta")),
+    asiento: String(raw("asiento")),
+    otra_consulta: String(raw("otra_consulta")),
   };
+  p.tipo_consulta = transmundoTipoConsulta(raw("tipo_consulta"), p);
+  return p;
+}
+
+// "boleto" (compra de boleto aéreo) u "otra". Si no viene, se infiere:
+// boleto cuando hay origen/destino; si no, otra.
+function transmundoTipoConsulta(rawTipo, p) {
+  const s = transmundoNorm(rawTipo);
+  if (s) {
+    if (s.includes("otra") || s.includes("otro")) return "otra";
+    if (s.includes("boleto") || s.includes("vuelo") || s.includes("aereo") || s.includes("ticket")) return "boleto";
+  }
+  return (String(p.origen || "").trim() || String(p.destino || "").trim()) ? "boleto" : "otra";
 }
 
 function validateTransmundo(p) {
@@ -2201,7 +2225,13 @@ function validateTransmundo(p) {
   if (p.tipo_cliente !== "frecuente" && p.tipo_cliente !== "nuevo") {
     return "tipo_cliente es requerido: frecuente o nuevo";
   }
-  if (!p.consulta || looksFakePedido(p.consulta)) return "consulta es requerida";
+  if (p.tipo_consulta === "boleto") {
+    const hasTrip = String(p.origen || "").trim() || String(p.destino || "").trim();
+    if (!hasTrip && (!p.consulta || looksFakePedido(p.consulta))) return "consulta es requerida (o origen/destino del boleto)";
+  } else {
+    const det = String(p.otra_consulta || "").trim() || String(p.consulta || "").trim();
+    if (!det || looksFakePedido(det)) return "consulta es requerida";
+  }
   return "";
 }
 
@@ -2224,58 +2254,127 @@ function transmundoRouting(p, resolved) {
   return { toEmail, intendedEmail, intendedLabel, routeOn };
 }
 
+// Helpers de formato para el correo de Transmundo
+function transmundoCap(v) {
+  const s = String(v ?? "").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+}
+function transmundoSiNo(v) {
+  if (typeof v === "boolean") return v ? "Sí" : "No";
+  const s = transmundoNorm(v);
+  if (!s) return "";
+  if (["true", "si", "s", "yes", "1"].includes(s)) return "Sí";
+  if (["false", "no", "n", "0", "ninguno", "ninguna"].includes(s)) return "No";
+  return transmundoCap(v);
+}
+function transmundoInfantes(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (/^\d+$/.test(s)) return Number(s) === 0 ? "No" : `Sí, ${Number(s)}`;
+  return transmundoSiNo(s);
+}
+function transmundoTipoBoleto(v) {
+  const s = transmundoNorm(v);
+  if (!s) return "";
+  if (s.includes("vuelta") || s.includes("redondo")) return "Ida y vuelta";
+  if (s.includes("solo ida") || s === "ida" || s.includes("sencillo") || s.includes("una via")) return "Solo ida";
+  return transmundoCap(v);
+}
+function transmundoPersonas(p) {
+  const s = String(p.personas ?? "").trim();
+  if (s) return s;
+  const total = (p.adultos || 0) + (p.ninos || 0);
+  return total > 0 ? String(total) : "";
+}
+function transmundoPersonasMaleta(p, personas) {
+  const s = String(p.personas_maleta ?? "").trim();
+  if (!s) return "";
+  if (/^\d+$/.test(s) && /^\d+$/.test(personas)) return `${s} de ${personas}`;
+  return s;
+}
+
+function transmundoEmailHtml(title, ts, sections, footerNote) {
+  const F = "font-family:Helvetica,Arial,sans-serif;";
+  const G = "#1d6b35";
+  const row = (k, v, last) => `<tr><td style="${F}padding:7px 4px;font-size:14px;color:#666666;width:46%;vertical-align:top;${last ? "" : "border-bottom:1px solid #eeeeee;"}">${escHtml(k)}</td><td style="${F}padding:7px 4px;font-size:14px;color:#222222;font-weight:bold;vertical-align:top;${last ? "" : "border-bottom:1px solid #eeeeee;"}">${escHtml(v).replace(/\n/g, "<br>")}</td></tr>`;
+  const sec = ([t, rows]) => `<tr><td style="padding:0 22px">
+    <div style="${F}color:${G};font-size:11px;font-weight:bold;letter-spacing:1px;margin:16px 0 6px;border-bottom:2px solid ${G};padding-bottom:4px">${escHtml(t.toUpperCase())}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">${rows.map(([k, v], i) => row(k, v, i === rows.length - 1)).join("")}</table>
+  </td></tr>`;
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#eef0f2">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef0f2"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background:#ffffff;border-collapse:separate;border-radius:8px">
+  <tr><td style="background:${G};padding:18px 22px;border-radius:8px 8px 0 0">
+    <div style="${F}font-size:18px;font-weight:bold;color:#ffffff">${escHtml(title)}</div>
+    <div style="${F}font-size:13px;color:#ffffff;opacity:.9;padding-top:4px">${escHtml(ts)}</div>
+  </td></tr>
+  <tr><td style="height:6px;line-height:6px;font-size:0">&nbsp;</td></tr>
+  ${sections.map(sec).join("\n  ")}
+  <tr><td style="${F}padding:16px;font-size:11px;color:#999999;text-align:center">Notificación automática · Genio${footerNote ? `<br><span style="color:#b0b0b0">${escHtml(footerNote)}</span>` : ""}</td></tr>
+</table></td></tr></table></body></html>`;
+}
+
 function buildTransmundoEmail(p, routing, resolved) {
   const ts = guatemalaTimestamp();
   const who = String(p.nombre || "").trim() || "cliente";
-  const agenteNombre = resolved?.name || String(p.agente || "").trim();
-  const subject = `Transmundo – Consulta para ${agenteNombre} – ${who}`;
+  const esBoleto = (p.tipo_consulta || transmundoTipoConsulta("", p)) === "boleto";
+  const subject = `${esBoleto ? "Compra de boleto aéreo" : "Consulta"} – ${who}`;
   const telFmt = EMAIL_UI.fmtTel(p.telefono);
-  const tipoLabel = p.tipo_cliente === "frecuente" ? "Cliente frecuente" : "Cliente nuevo";
-  const lines = [
-    "Consulta — Transmundo",
-    "",
-    `Fecha (America/Tegucigalpa): ${ts}`,
-    `Nombre: ${p.nombre}`,
-    `Teléfono: ${p.telefono}`,
-    `Tipo de cliente: ${tipoLabel}`,
-    `Agente: ${agenteNombre}`,
-    `Consulta: ${p.consulta}`,
-  ];
-  const kv = [
-    ["Nombre", p.nombre],
-    ["Teléfono", telFmt],
-    ["Tipo de cliente", tipoLabel],
-    ["Agente", agenteNombre],
-    ["Consulta", p.consulta],
-  ];
-  const optionals = [
-    ["Origen", p.origen],
-    ["Destino", p.destino],
-    ["Fecha de ida", p.fecha_ida],
-    ["Fecha de regreso", p.fecha_regreso],
-    ["Adultos", p.adultos == null ? "" : String(p.adultos)],
-    ["Niños", p.ninos == null ? "" : String(p.ninos)],
-    ["Visa", p.visa],
-    ["Vacuna fiebre amarilla", p.vacuna_fiebre_amarilla],
-  ];
-  for (const [label, value] of optionals) {
-    if (String(value || "").trim()) {
-      lines.push(`${label}: ${value}`);
-      kv.push([label, String(value)]);
-    }
+
+  const tipoBoleto = transmundoTipoBoleto(p.tipo_boleto);
+  const soloIda = tipoBoleto === "Solo ida";
+  const personas = transmundoPersonas(p);
+  const maleta = transmundoSiNo(p.maleta_documentada);
+  const sections = [];
+  const add = (title, rows) => {
+    const r = rows.filter(([, v]) => String(v ?? "").trim());
+    if (r.length) sections.push([title, r.map(([k, v]) => [k, String(v).trim()])]);
+  };
+  add("Cliente", [["Nombre completo", p.nombre], ["Teléfono", telFmt]]);
+  if (esBoleto) {
+    add("Viaje", [
+      ["Tipo de boleto", tipoBoleto],
+      ["Fecha de salida", p.fecha_ida],
+      ["Fecha de regreso", soloIda ? "" : p.fecha_regreso],
+      ["Salida", p.origen],
+      ["Destino", p.destino],
+    ]);
+    add("Pasajeros", [
+      ["Número de personas", personas],
+      ["Infantes menores de 2 años", transmundoInfantes(p.infantes)],
+    ]);
+    add("Preferencias de vuelo", [
+      ["Tipo de vuelo", transmundoCap(p.tipo_vuelo)],
+      ["Horario preferido", transmundoCap(p.horario)],
+      ["Maleta documentada", maleta],
+      ["Personas con maleta documentada", maleta === "No" ? "" : transmundoPersonasMaleta(p, personas)],
+      ["Asiento", transmundoCap(p.asiento)],
+    ]);
+    add("Requisitos", [
+      ["Visa vigente de EE. UU.", transmundoSiNo(p.visa)],
+      ["Vacuna de la fiebre amarilla", transmundoSiNo(p.vacuna_fiebre_amarilla)],
+    ]);
+  } else {
+    add("Otra consulta", [["Detalle", String(p.otra_consulta || "").trim() || p.consulta]]);
   }
-  const routingNote = routing.routeOn && routing.toEmail === routing.intendedEmail
+
+  const sentToAgent = routing.routeOn && routing.toEmail === routing.intendedEmail;
+  const footerNote = sentToAgent
+    ? ""
+    : `Modo prueba · enviado a ${routing.toEmail} · destinatario real: ${routing.intendedLabel}`;
+
+  const lines = [subject, "", `Fecha (America/Tegucigalpa): ${ts}`];
+  for (const [t, rows] of sections) {
+    lines.push("", t.toUpperCase());
+    for (const [k, v] of rows) lines.push(`${k}: ${v}`);
+  }
+  const routingNote = sentToAgent
     ? `Este correo se envió al agente: ${routing.intendedLabel}`
     : `MODO PRUEBA: este correo se envió a ${routing.toEmail}. El destinatario real del agente sería: ${routing.intendedLabel}`;
   lines.push("", routingNote);
-  kv.push(["Destinatario real del agente", routing.intendedLabel]);
-  if (!(routing.routeOn && routing.toEmail === routing.intendedEmail)) {
-    kv.push(["Enviado en prueba a", routing.toEmail]);
-  }
 
-  const { kvTable, card } = EMAIL_UI;
-  const cards = [card("Consulta — Transmundo", kvTable(kv))];
-  const html = EMAIL_UI.shell(ts, "", cards);
+  const html = transmundoEmailHtml(subject, ts, sections, footerNote);
   return { subject, text: lines.join("\n"), html };
 }
 
@@ -2294,7 +2393,8 @@ async function handleTransmundoConsulta(req, res) {
   console.log("[transmundo-consulta] inbound", {
     tipo_cliente: p.tipo_cliente,
     agenteResuelto: resolved?.name || "",
-    tieneConsulta: Boolean(p.consulta),
+    tipo_consulta: p.tipo_consulta,
+    tieneConsulta: Boolean(p.consulta || p.otra_consulta),
     dryRun,
   });
   const err = validateTransmundo(p);
@@ -2306,7 +2406,7 @@ async function handleTransmundoConsulta(req, res) {
     p.tipo_cliente,
     String(p.telefono).replace(/\D/g, ""),
     resolved?.name || p.agente,
-    String(p.consulta).slice(0, 80),
+    String(p.consulta || p.otra_consulta).slice(0, 80),
     p.destino || "",
     p.fecha_ida || "",
   ].join("|").toLowerCase();
@@ -2945,6 +3045,7 @@ export {
   app,
   buildFincaZunaInfoEmail,
   buildTransmundoEmail,
+  extractTransmundo,
   resolveTransmundoAgente,
   transmundoRouting,
   applyChanchitoPedidoFields,

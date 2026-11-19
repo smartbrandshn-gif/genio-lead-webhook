@@ -3,7 +3,7 @@ process.env.LEAD_WEBHOOK_SECRET = "test-secret";
 process.env.SMTP_USER = "";
 delete process.env.TRANSMUNDO_ROUTE_TO_AGENTS;
 delete process.env.TRANSMUNDO_DRY_RUN;
-const { app, resolveTransmundoAgente, transmundoRouting } = await import("../server.js");
+const { app, resolveTransmundoAgente, transmundoRouting, buildTransmundoEmail } = await import("../server.js");
 const srv = app.listen(0);
 const base = `http://127.0.0.1:${srv.address().port}/webhooks/pedido/Transmundo/consulta`;
 const post = (body, secret) => fetch(base, {
@@ -32,7 +32,10 @@ try {
   assert.equal(j.to, "sarmientod6@gmail.com");
   assert.equal(j.destinatario_real, "kelly.gudiel@transmundohn.com");
   assert.equal(j.route_to_agents, false);
-  assert.equal(j.subject, "Transmundo – Consulta para Kelly Gudiel – Ana López");
+  assert.equal(j.subject, "Consulta – Ana López");
+  assert.match(j.text, /OTRA CONSULTA/);
+  assert.match(j.text, /Detalle: Quiere cotizar un viaje familiar/);
+  assert.doesNotMatch(j.text, /Agente:|Tipo de cliente:/);
   assert.match(j.text, /MODO PRUEBA/);
   assert.match(j.text, /kelly\.gudiel@transmundohn\.com/);
 
@@ -64,8 +67,37 @@ try {
   const n = await r.json();
   assert.equal(n.ok, true);
   assert.equal(n.to, "sarmientod6@gmail.com");
-  assert.match(n.subject, /Nuevo cliente/);
+  assert.equal(n.subject, "Compra de boleto aéreo – Carlos Pérez");
+  assert.equal(n.destinatario_real, "sin asignar (aún no hay correo de clientes nuevos)");
+  assert.match(n.text, /Número de personas: 3/);
+  assert.match(n.text, /Vacuna de la fiebre amarilla: Sí/);
+  assert.doesNotMatch(n.text, /OTRA CONSULTA/);
   assert.match(n.text, /Buenos Aires/);
+
+  // Campos desglosados nuevos
+  r = await post({
+    nombre: "Daniel Sarmiento", telefono: "95660886", telefono_confirmado: true,
+    agente: "María José Baltodano", tipo_cliente: "frecuente", tipo_consulta: "boleto",
+    tipo_boleto: "ida y vuelta", fecha_ida: "24 de diciembre", fecha_regreso: "7 de enero",
+    origen: "San Pedro Sula, Honduras", destino: "San Diego, Estados Unidos",
+    personas: 3, infantes: "no", tipo_vuelo: "directo", horario: "mañana",
+    maleta_documentada: true, personas_maleta: 2, asiento: "pasillo", visa: "sí", dry_run: true,
+  }, "test-secret");
+  const d = await r.json();
+  assert.equal(d.ok, true);
+  assert.equal(d.subject, "Compra de boleto aéreo – Daniel Sarmiento");
+  assert.equal(d.destinatario_real, "mariajose.baltodano@transmundohn.com");
+  for (const re of [/Tipo de boleto: Ida y vuelta/, /Fecha de regreso: 7 de enero/, /Infantes menores de 2 años: No/,
+    /Tipo de vuelo: Directo/, /Horario preferido: Mañana/, /Maleta documentada: Sí/,
+    /Personas con maleta documentada: 2 de 3/, /Asiento: Pasillo/, /Visa vigente de EE\. UU\.: Sí/]) assert.match(d.text, re);
+  assert.doesNotMatch(d.text, /Vacuna|OTRA CONSULTA|Consulta:/);
+
+  // Solo ida oculta la fecha de regreso
+  const e = buildTransmundoEmail({ nombre: "X", telefono: "99999999", tipo_consulta: "boleto", tipo_boleto: "solo ida",
+    fecha_ida: "1 de marzo", fecha_regreso: "9 de marzo", destino: "Lima" },
+    { routeOn: false, toEmail: "sarmientod6@gmail.com", intendedEmail: "", intendedLabel: "x" }, null);
+  assert.doesNotMatch(e.text, /Fecha de regreso/);
+  assert.match(e.html, /Modo prueba/);
 
   const other = await fetch(`http://127.0.0.1:${srv.address().port}/webhooks/pedido/Manzano/consulta`, {
     method: "POST",
