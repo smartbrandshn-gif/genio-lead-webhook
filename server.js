@@ -2269,10 +2269,12 @@ function transmundoSiNo(v) {
   return transmundoCap(v);
 }
 function transmundoParadaIntermedia(v) {
-  const display = transmundoSiNo(v);
-  if (!display) return { label: "Parada intermedia", value: "" };
-  const multi = /;/.test(String(v ?? ""));
-  return { label: multi ? "Paradas intermedias" : "Parada intermedia", value: display };
+  const raw = String(v ?? "").trim();
+  if (!raw) return [];
+  const asSiNo = transmundoSiNo(raw);
+  if (asSiNo === "No" || asSiNo === "Sí") return [["Parada intermedia", asSiNo]];
+  const parts = raw.split(/[;\r\n]+/).map((s) => s.trim()).filter(Boolean);
+  return parts.map((s) => ["Parada intermedia", transmundoCap(s)]);
 }
 function transmundoInfantes(v) {
   const s = String(v ?? "").trim();
@@ -2339,7 +2341,7 @@ function buildTransmundoEmail(p, routing, resolved) {
   const soloIda = tipoBoleto === "Solo ida";
   const personas = transmundoPersonas(p);
   const maleta = transmundoSiNo(p.maleta_documentada);
-  const parada = transmundoParadaIntermedia(p.parada_intermedia);
+  const paradaRows = transmundoParadaIntermedia(p.parada_intermedia);
   const sections = [];
   const add = (title, rows) => {
     const r = rows.filter(([, v]) => String(v ?? "").trim());
@@ -2353,7 +2355,7 @@ function buildTransmundoEmail(p, routing, resolved) {
       ["Fecha de regreso", soloIda ? "" : p.fecha_regreso],
       ["Salida", p.origen],
       ["Destino", p.destino],
-      [parada.label, parada.value],
+      ...paradaRows,
     ]);
     add("Pasajeros", [
       ["Número de personas", personas],

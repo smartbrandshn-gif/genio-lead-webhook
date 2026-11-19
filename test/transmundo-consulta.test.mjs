@@ -112,7 +112,9 @@ try {
   }, "test-secret");
   const par = await r.json();
   assert.equal(par.ok, true);
-  assert.match(par.text, /Paradas intermedias: Miami, 3 días; Madrid, 2 días/);
+  assert.match(par.text, /Parada intermedia: Miami, 3 días/);
+  assert.match(par.text, /Parada intermedia: Madrid, 2 días/);
+  assert.doesNotMatch(par.text, /Paradas intermedias|Parada 1:|Parada 2:/);
   assert.doesNotMatch(par.text, /Visa|Vacuna/);
 
   const noParada = buildTransmundoEmail({ nombre: "X", telefono: "99999999", tipo_consulta: "boleto",
@@ -120,12 +122,21 @@ try {
     origen: "Tegucigalpa", destino: "París", parada_intermedia: "no" },
     { routeOn: false, toEmail: "sarmientod6@gmail.com", intendedEmail: "", intendedLabel: "x" }, null);
   assert.match(noParada.text, /Parada intermedia: No/);
-  assert.doesNotMatch(noParada.text, /Paradas intermedias/);
+  assert.doesNotMatch(noParada.text, /Paradas intermedias|Parada 1:/);
+  assert.equal((noParada.text.match(/Parada intermedia:/g) || []).length, 1);
 
   const sinParada = buildTransmundoEmail({ nombre: "X", telefono: "99999999", tipo_consulta: "boleto",
     destino: "París" },
     { routeOn: false, toEmail: "sarmientod6@gmail.com", intendedEmail: "", intendedLabel: "x" }, null);
-  assert.doesNotMatch(sinParada.text, /Parada intermedia|Paradas intermedias/);
+  assert.doesNotMatch(sinParada.text, /Parada intermedia|Paradas intermedias|Parada \d/);
+
+  const porSalto = buildTransmundoEmail({ nombre: "X", telefono: "99999999", tipo_consulta: "boleto",
+    destino: "París", parada_intermedia: "Miami, 3 días\nMadrid, 2 días" },
+    { routeOn: false, toEmail: "sarmientod6@gmail.com", intendedEmail: "", intendedLabel: "x" }, null);
+  assert.match(porSalto.text, /Parada intermedia: Miami, 3 días/);
+  assert.match(porSalto.text, /Parada intermedia: Madrid, 2 días/);
+  assert.equal((porSalto.text.match(/Parada intermedia:/g) || []).length, 2);
+  assert.equal((par.text.match(/Parada intermedia:/g) || []).length, 2);
 
   r = await post({
     nombre: "Ana López", telefono: "99881234", telefono_confirmado: true,
