@@ -2129,7 +2129,7 @@ app.post("/webhooks/pedido-rosso/:sucursal/info", fincaZunaInfoRoute);
  * Debe registrarse ANTES de la ruta genérica /webhooks/pedido/:sucursal/:tipo.
  */
 const TRANSMUNDO_TO_EMAIL = process.env.TRANSMUNDO_TO_EMAIL || "sarmientod6@gmail.com";
-const TRANSMUNDO_FROM = `"Transmundo Consultas" <genionotificaciones@gmail.com>`;
+const TRANSMUNDO_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const TRANSMUNDO_AGENTS = [
   { name: "Kelly Gudiel", email: "kelly.gudiel@transmundohn.com", aliases: ["kelly", "kelly gudiel", "gudiel"] },
   { name: "Perla Dubón", email: "perla.dubon@transmundohn.com", aliases: ["perla", "perla dubon", "dubon"] },
@@ -2306,8 +2306,7 @@ function transmundoEmailHtml(title, ts, sections, footerNote) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef0f2"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background:#ffffff;border-collapse:separate;border-radius:8px">
   <tr><td style="background:${G};padding:18px 22px;border-radius:8px 8px 0 0">
-    <div style="${F}font-size:18px;font-weight:bold;color:#ffffff">${escHtml(title)}</div>
-    <div style="${F}font-size:13px;color:#ffffff;opacity:.9;padding-top:4px">${escHtml(ts)}</div>
+    <div style="${F}font-size:16px;font-weight:bold;color:#ffffff">${escHtml(ts)}</div>
   </td></tr>
   <tr><td style="height:6px;line-height:6px;font-size:0">&nbsp;</td></tr>
   ${sections.map(sec).join("\n  ")}
