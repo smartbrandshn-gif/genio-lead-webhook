@@ -67,6 +67,21 @@ check("parseArniesPedido conserva viñetas y acepta Para llevar", () => {
   ]);
 });
 
+check("comentario de cocina queda bajo el plato; el que no tiene no muestra línea", () => {
+  const r = parseArniesPedido("Para llevar:\n1 Mar y Tierra — 1050 lempiras\n- Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa\n1 Media orden de lechón 4 oz — 200 lempiras\n1 Sopa de Tortilla Grande — 290 lempiras\n2 Tacos de Lechón — 520 lempiras\n- Comentario de cocina: sin cebolla\n1 Brownie — 190 lempiras");
+  assert.deepEqual(r.items, [
+    "1 Mar y Tierra — 1050 lempiras",
+    "• Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa",
+    "1 Media orden de lechón 4 oz — 200 lempiras",
+    "1 Sopa de Tortilla Grande — 290 lempiras",
+    "2 Tacos de Lechón — 520 lempiras",
+    "• Comentario de cocina: sin cebolla",
+    "1 Brownie — 190 lempiras",
+  ]);
+  const empty = parseArniesPedido("1 Brownie — 190 lempiras\n- Comentario de cocina:");
+  assert.deepEqual(empty.items, ["1 Brownie — 190 lempiras"]);
+});
+
 check("correo: campos etiquetados, RTN vacío → No solicitó RTN, hora omitida si falta, forma No", () => {
   const e = buildRossoEmail({ ...base, comentario_cliente: "Ninguno" });
   assert.equal(e.subject, "Nuevo pedido: Cliente Ejemplo");
@@ -91,8 +106,8 @@ check("correo: tipo_servicio, forma_pago, hora_estimada y RTN en campos propios"
     hora_estimada: "20-25 minutos",
     rtn_numero: "0000-0000-000000",
     rtn_nombre: "Cliente Ejemplo",
-    comentario_cliente: "Papas fritas y ensalada de la casa en vez de las guarniciones fijas",
-    pedido: "Para llevar:\n1 Mar y Tierra — 1050 lempiras\n• Proteína: filete 9 oz, 10 camarones al ajillo\n• Término: roja\n• Guarnición: Papas Fritas Estilo Arnie's\n• Guarnición: Ensalada de la Casa\n1 Media orden de lechón 4 oz — 200 lempiras\n• Extra\n1 Sopa de Tortilla Grande — 290 lempiras\n2 Tacos de Lechón — 520 lempiras\n• Cantidad: 2\n• Precio unitario: 260 lempiras\n• Subtotal: 520 lempiras\n1 Brownie — 190 lempiras",
+    comentario_cliente: "Ninguno",
+    pedido: "Para llevar:\n1 Mar y Tierra — 1050 lempiras\n• Proteína: filete 9 oz, 10 camarones al ajillo\n• Término: roja\n• Guarnición: Papas Fritas Estilo Arnie's\n• Guarnición: Ensalada de la Casa\n- Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa\n1 Media orden de lechón 4 oz — 200 lempiras\n• Extra\n1 Sopa de Tortilla Grande — 290 lempiras\n2 Tacos de Lechón — 520 lempiras\n• Cantidad: 2\n• Precio unitario: 260 lempiras\n• Subtotal: 520 lempiras\n- Comentario de cocina: sin cebolla\n1 Brownie — 190 lempiras",
     total: 2250,
   });
   assert.equal(e.subject, "Nuevo pedido: Cliente Ejemplo");
@@ -104,12 +119,30 @@ check("correo: tipo_servicio, forma_pago, hora_estimada y RTN en campos propios"
   assert.match(e.text, /Nombre del RTN: Cliente Ejemplo/);
   assert.match(e.text, /• Proteína: filete 9 oz, 10 camarones al ajillo/);
   assert.match(e.text, /• Término: roja/);
+  assert.match(e.text, /1 Mar y Tierra — 1050 lempiras[\s\S]*• Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa[\s\S]*1 Media orden de lechón 4 oz/);
+  assert.match(e.text, /2 Tacos de Lechón — 520 lempiras[\s\S]*• Comentario de cocina: sin cebolla[\s\S]*1 Brownie/);
+  assert.doesNotMatch(e.text, /1 Media orden de lechón 4 oz — 200 lempiras\n• Extra\n• Comentario de cocina/);
+  assert.doesNotMatch(e.text, /1 Sopa de Tortilla Grande — 290 lempiras\n• Comentario de cocina/);
+  assert.doesNotMatch(e.text, /1 Brownie — 190 lempiras\n• Comentario de cocina/);
+  assert.doesNotMatch(e.text, /^Comentario de cocina:/m);
+  assert.doesNotMatch(e.text, /Nota general/);
   assert.match(e.text, /Total: 2250 lempiras/);
   assert.match(e.html, /Link de pago|Tarjeta/);
   assert.match(e.html, /20-25 minutos/);
   assert.match(e.html, /Número de RTN/);
   assert.match(e.html, /• Proteína: filete 9 oz, 10 camarones al ajillo/);
+  assert.match(e.html, /• Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa/);
+  assert.match(e.html, /• Comentario de cocina: sin cebolla/);
   assert.doesNotMatch(e.html, /ISV/);
+});
+
+check("comentario_cliente que no es modificación se muestra una vez como Nota general, no como comentario de cocina agrupado", () => {
+  const e = buildRossoEmail({ ...base, comentario_cliente: "Llamar al llegar" });
+  assert.match(e.text, /Nota general: Llamar al llegar/);
+  assert.match(e.html, /Nota general/);
+  assert.match(e.html, /Llamar al llegar/);
+  assert.doesNotMatch(e.text, /^Comentario de cocina:/m);
+  assert.doesNotMatch(e.html, />Comentario de cocina</);
 });
 
 check("MODIFICACIÓN DE PEDIDO aparece en asunto, texto y encabezado HTML", () => {
@@ -122,7 +155,10 @@ check("MODIFICACIÓN DE PEDIDO aparece en asunto, texto y encabezado HTML", () =
   assert.match(e.text, /MODIFICACIÓN DE PEDIDO — Arnie's/);
   assert.match(e.text, /MODIFICACIÓN DE PEDIDO\nTipo:/);
   assert.match(e.html, /MODIFICACIÓN DE PEDIDO/);
-  assert.match(e.text, /Comentario de cocina: MODIFICACIÓN DE PEDIDO: quitar el brownie y agregar otra sopa/);
+  assert.match(e.text, /MODIFICACIÓN DE PEDIDO: quitar el brownie y agregar otra sopa/);
+  assert.doesNotMatch(e.text, /Comentario de cocina: MODIFICACIÓN/);
+  assert.doesNotMatch(e.text, /Nota general/);
+  assert.doesNotMatch(e.html, />Comentario de cocina</);
 });
 
 check("no altera el correo de Izakaya ni Manzano (sin campos nuevos de Arnie's)", () => {

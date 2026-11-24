@@ -1407,7 +1407,10 @@ function parseArniesPedido(raw) {
       const t = x.trim().replace(/[.,]$/, "");
       if (!t) return "";
       const m = t.match(/^[-–•*·]\s*(.*)$/);
-      if (m) return m[1].trim() ? `• ${m[1].trim()}` : "";
+      const body = m ? m[1].trim() : t;
+      const cm = body.match(/^comentario\s+de\s+cocina\s*:\s*(.*)$/i);
+      if (cm) return cm[1].trim() ? `• Comentario de cocina: ${cm[1].trim()}` : "";
+      if (m) return body ? `• ${body}` : "";
       return t;
     })
     .filter(Boolean);
@@ -1442,8 +1445,15 @@ function buildArniesPedidoEmail(p) {
     : [["RTN", "No solicitó RTN"]];
 
   const comentarioRaw = String(p.comentario_cliente == null ? "" : p.comentario_cliente).trim();
-  const comentario = normComentarioCliente(comentarioRaw);
-  const comentarioRows = comentario && comentario !== "Ninguno" ? [["Comentario de cocina", comentario]] : [];
+  // comentario_cliente: modificación o nota general. Los comentarios de cocina van por plato en `pedido`.
+  let extraRows = [];
+  if (isMod) {
+    const detalle = comentarioRaw.replace(/^\s*MODIFICACI[OÓ]N DE PEDIDO\s*:\s*/i, "").trim();
+    extraRows = [["MODIFICACIÓN DE PEDIDO", detalle || comentarioRaw]];
+  } else {
+    const nota = normComentarioCliente(comentarioRaw);
+    if (nota && nota !== "Ninguno") extraRows = [["Nota general", nota]];
+  }
 
   const pedidoMeta = [
     ["Tipo", tipoServicio],
@@ -1466,7 +1476,7 @@ function buildArniesPedidoEmail(p) {
     ...(horaEstimada ? [`Hora estimada: ${horaEstimada}`] : []),
     "Detalle:",
     items.join("\n"),
-    ...comentarioRows.map(([k, v]) => `${k}: ${v}`),
+    ...extraRows.map(([k, v]) => `${k}: ${v}`),
     `Total: ${totalStr}`,
     "",
     ...facturaRows.map(([k, v]) => `${k}: ${v}`),
@@ -1480,7 +1490,7 @@ function buildArniesPedidoEmail(p) {
       ["Nombre", p.nombre],
       ["Teléfono", telFmt],
     ])),
-    card(isMod ? "MODIFICACIÓN DE PEDIDO" : "Pedido", kvTable(pedidoMeta) + EMAIL_UI.itemsTable(items, totalStr, comentarioRows)),
+    card(isMod ? "MODIFICACIÓN DE PEDIDO" : "Pedido", kvTable(pedidoMeta) + EMAIL_UI.itemsTable(items, totalStr, extraRows)),
     card("Factura", kvTable(facturaRows)),
   ];
   if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
