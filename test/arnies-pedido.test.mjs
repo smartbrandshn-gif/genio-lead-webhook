@@ -84,7 +84,10 @@ check("comentario de cocina queda bajo el plato; el que no tiene no muestra lín
 
 check("correo: campos etiquetados, RTN vacío → No solicitó RTN, hora omitida si falta, forma No", () => {
   const e = buildRossoEmail({ ...base, comentario_cliente: "Ninguno" });
-  assert.equal(e.subject, "Nuevo pedido: Cliente Ejemplo");
+  assert.equal(e.subject, "Nuevo pedido - Cliente Ejemplo");
+  assert.match(e.text, /^Nuevo pedido\n/);
+  assert.doesNotMatch(e.text, /^Arnie/);
+  assert.doesNotMatch(e.text, /Nuevo pedido — Arnie/);
   assert.match(e.text, /Restaurante: Arnie's/);
   assert.match(e.text, /Tipo: Para llevar/);
   assert.match(e.text, /Forma de pago: No/);
@@ -110,7 +113,7 @@ check("correo: tipo_servicio, forma_pago y RTN en campos propios; sin hora estim
     pedido: "Para llevar:\n1 Mar y Tierra — 1050 lempiras\n• Proteína: filete 9 oz, 10 camarones al ajillo\n• Término: roja\n• Guarnición: Papas Fritas Estilo Arnie's\n• Guarnición: Ensalada de la Casa\n- Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa\n1 Media orden de lechón 4 oz — 200 lempiras\n• Extra\n1 Sopa de Tortilla Grande — 290 lempiras\n2 Tacos de Lechón — 520 lempiras\n• Cantidad: 2\n• Precio unitario: 260 lempiras\n• Subtotal: 520 lempiras\n- Comentario de cocina: sin cebolla\n1 Brownie — 190 lempiras",
     total: 2250,
   });
-  assert.equal(e.subject, "Nuevo pedido: Cliente Ejemplo");
+  assert.equal(e.subject, "Nuevo pedido - Cliente Ejemplo");
   assert.match(e.text, /Tipo: Para llevar/);
   assert.match(e.text, /Forma de pago: Tarjeta/);
   assert.doesNotMatch(e.text, /Hora estimada/);
@@ -161,7 +164,8 @@ check("MODIFICACIÓN DE PEDIDO aparece en asunto, texto y encabezado HTML", () =
     comentario_cliente: "MODIFICACIÓN DE PEDIDO: quitar el brownie y agregar otra sopa",
   });
   assert.equal(e.subject, "MODIFICACIÓN DE PEDIDO: Cliente Ejemplo");
-  assert.match(e.text, /MODIFICACIÓN DE PEDIDO — Arnie's/);
+  assert.match(e.text, /^MODIFICACIÓN DE PEDIDO\n/);
+  assert.doesNotMatch(e.text, /MODIFICACIÓN DE PEDIDO — Arnie/);
   assert.match(e.text, /MODIFICACIÓN DE PEDIDO\nTipo:/);
   assert.match(e.html, /MODIFICACIÓN DE PEDIDO/);
   assert.match(e.text, /MODIFICACIÓN DE PEDIDO: quitar el brownie y agregar otra sopa/);
@@ -309,9 +313,17 @@ check("validateRosso Arnie's reserva exige los 6 campos y telefono_confirmado; f
   assert.equal(aliasPers.reserva_personas, 6);
 });
 
+check("asuntos Arnie's: guion y sin nombre, no dos puntos; reserva conserva el cuerpo", () => {
+  assert.equal(buildRossoEmail({ ...reservaBase, nombre: "", reserva_nombre: "" }).subject, "Nueva reserva");
+  assert.equal(buildRossoEmail({ ...reservaBase }).subject, "Nueva reserva - Ana López");
+  const pedidoVacio = buildRossoEmail({ tipo: "pedido", sucursal: "Arnies", nombre: "  ", telefono: "99991234", telefono_confirmado: true, tipo_pedido: "recoger", pedido: "1 Brownie — 190 lempiras", total: 190 });
+  assert.equal(pedidoVacio.subject, "Nuevo pedido");
+  assert.match(pedidoVacio.text, /^Nuevo pedido\n/);
+});
+
 check("correo de reserva Arnie's: 6 campos propios, no plantilla de evento Manzano", () => {
   const e = buildRossoEmail({ ...reservaBase });
-  assert.equal(e.subject, "Nueva reserva: Ana López");
+  assert.equal(e.subject, "Nueva reserva - Ana López");
   assert.match(e.text, /Nueva reserva — Arnie's/);
   assert.match(e.text, /Nombre completo: Ana López/);
   assert.match(e.text, /Fecha: 28\/11\/2026/);

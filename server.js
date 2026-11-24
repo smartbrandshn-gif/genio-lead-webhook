@@ -1126,7 +1126,7 @@ const MANZANO_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const IZAKAYA_TO_EMAIL = process.env.IZAKAYA_TO_EMAIL || "sarmientod6@gmail.com";
 const IZAKAYA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const ARNIES_TO_EMAIL = process.env.ARNIES_TO_EMAIL || "sarmientod6@gmail.com";
-const ARNIES_FROM = `"Arnie's Pedidos" <genionotificaciones@gmail.com>`;
+const ARNIES_FROM = `"Genio Notificación" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
 const PULHAPANZAC_RESERVA_TO_EMAIL = "sarmientod6@gmail.com, pulhahn@gmail.com, catarataspulhapanzak@gmail.com";
 const PULHAPANZAC_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
@@ -1461,7 +1461,8 @@ function buildArniesReservaEmail(p) {
     ["Teléfono", telFmt || tel],
     ["Tipo de evento", String(p.tipo_evento || "").trim()],
   ];
-  const subject = `Nueva reserva: ${nombre}`;
+  const subjectNombre = String(p.reserva_nombre || p.nombre || "").trim();
+  const subject = subjectNombre ? `Nueva reserva - ${subjectNombre}` : "Nueva reserva";
   const lines = [
     "Nueva reserva — Arnie's",
     "",
@@ -1486,7 +1487,10 @@ function buildArniesPedidoEmail(p) {
 
   const who = String(p.nombre || "").trim() || "cliente";
   const isMod = isArniesModificacion(p.comentario_cliente);
-  const subject = isMod ? `MODIFICACIÓN DE PEDIDO: ${who}` : `Nuevo pedido: ${who}`;
+  const subjectNombre = String(p.nombre || "").trim();
+  const subject = isMod
+    ? `MODIFICACIÓN DE PEDIDO: ${who}`
+    : (subjectNombre ? `Nuevo pedido - ${subjectNombre}` : "Nuevo pedido");
 
   const tipoServicio = arniesNormTipoServicio(p.tipo_servicio) || parsed.tipo || arniesNormTipoServicio(p.tipo_pedido) || "No";
   const formaPago = arniesNormFormaPago(p.forma_pago) || arniesNormFormaPago(p.metodo_pago) || "No";
@@ -1522,7 +1526,7 @@ function buildArniesPedidoEmail(p) {
   // La cantidad ya va en la línea del plato (p. ej. «2 Tacos…»). Precio unitario y subtotal no se muestran; el total del pedido sí.
   const items = parsed.items.filter((it) => !/^\s*[-–—*·•]?\s*(cantidad|precio unitario|subtotal)\s*:/i.test(String(it).trim()));
   const lines = [
-    isMod ? "MODIFICACIÓN DE PEDIDO — Arnie's" : "Nuevo pedido — Arnie's",
+    isMod ? "MODIFICACIÓN DE PEDIDO" : "Nuevo pedido",
     "",
     `Fecha (America/Guatemala): ${ts}`,
     `Restaurante: Arnie's`,
