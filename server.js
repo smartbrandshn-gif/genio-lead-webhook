@@ -1206,6 +1206,10 @@ function extractRosso(req) {
     tipo_pedido: rossoTipoPedido(raw("tipo_pedido")),
     _tipoPedidoRaw: raw("tipo_pedido"),
     hora_recogida: String(raw("hora_recogida")),
+    // Solo Arnie's (otros flujos los ignoran): campos propios del correo de pedido
+    tipo_servicio: String(raw("tipo_servicio")),
+    forma_pago: String(raw("forma_pago")),
+    hora_estimada: String(raw("hora_estimada")),
     pedido: String(raw("pedido") || raw("pedido_completo") || raw("detalle_pedido") || raw("detalle")),
     total: rossoTotal(raw("total")),
     necesita_rtn: rossoBool(raw("necesita_rtn")),
@@ -1361,8 +1365,133 @@ function buildManzanoEventoEmail(p) {
   return { subject, text, html };
 }
 
+
+/* ---------- Arnie's: correo de pedido con campos propios (no usar en otros restaurantes) ---------- */
+function arniesNormTipoServicio(raw) {
+  const s = rossoNorm(raw);
+  if (!s) return "";
+  if (s.includes("comer") || s.includes("restaurante") || s.includes("mesa") || s.includes("aqui")) return "Comer en el restaurante";
+  if (s.includes("llevar") || s.includes("recog") || s.includes("takeout") || s.includes("take away")) return "Para llevar";
+  return "";
+}
+
+function arniesNormFormaPago(raw) {
+  const s = rossoNorm(raw);
+  if (!s) return "";
+  if (/\blink\b/.test(s) || s.includes("enlace") || s.includes("link de pago") || s.includes("linkdepago")) return "Link de pago";
+  if (s.includes("tarjeta")) return "Tarjeta";
+  if (s.includes("efectivo")) return "Efectivo";
+  return "";
+}
+
+function isArniesModificacion(comentario) {
+  return /^\s*MODIFICACI[OÓ]N DE PEDIDO\s*:/i.test(String(comentario || ""));
+}
+
+/** Como parseIzakayaPedido, pero conserva viñetas y acepta «Para llevar:». Solo Arnie's. */
+function parseArniesPedido(raw) {
+  let s = String(raw || "").trim();
+  let tipo = "";
+  const ci = s.indexOf(":");
+  if (ci > 0 && ci <= 60) {
+    const head = s.slice(0, ci).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (/^(?:para\s+)?(?:recoger|llevar)$/i.test(head)) { tipo = "Para llevar"; s = s.slice(ci + 1).replace(/^\s+/, ""); }
+    else if (/^(?:para\s+)?comer\s+(?:en\s+)?(?:el\s+)?restaurante$/i.test(head)) { tipo = "Comer en el restaurante"; s = s.slice(ci + 1).replace(/^\s+/, ""); }
+  }
+  let rtn = "", rtnNombre = "";
+  const rm = s.match(/[.;,|]?\s*RTN\s*:?\s*([\d\s-]{6,})(?:\s*,?\s*a\s+nombre\s+de\s+([^.;|\n]+?))?\s*(?=$|[.;|]\s|\.$|\n)/i);
+  if (rm) { rtn = rm[1].replace(/\D/g, ""); rtnNombre = (rm[2] || "").trim(); s = s.replace(rm[0], "\n"); }
+  const items = s
+    .split(/\s*\|\s*|\s*;\s*|\r?\n|(?<=lempiras?)\s*[.,]?\s+(?=\d)/i)
+    .map((x) => {
+      const t = x.trim().replace(/[.,]$/, "");
+      if (!t) return "";
+      const m = t.match(/^[-–•*·]\s*(.*)$/);
+      if (m) return m[1].trim() ? `• ${m[1].trim()}` : "";
+      return t;
+    })
+    .filter(Boolean);
+  return { tipo, pago: "", rtn, rtnNombre, items: items.length ? items : [String(raw || "").trim()] };
+}
+
+function buildArniesPedidoEmail(p) {
+  p = { ...p };
+  const ts = guatemalaTimestamp();
+  const parsed = parseArniesPedido(p.pedido);
+  if (!p.rtn_numero && parsed.rtn) p.rtn_numero = parsed.rtn;
+  if (!p.rtn_nombre && parsed.rtnNombre) p.rtn_nombre = parsed.rtnNombre;
+
+  const who = String(p.nombre || "").trim() || "cliente";
+  const isMod = isArniesModificacion(p.comentario_cliente);
+  const subject = isMod ? `MODIFICACIÓN DE PEDIDO: ${who}` : `Nuevo pedido: ${who}`;
+
+  const tipoServicio = arniesNormTipoServicio(p.tipo_servicio) || parsed.tipo || arniesNormTipoServicio(p.tipo_pedido) || "No";
+  const formaPago = arniesNormFormaPago(p.forma_pago) || arniesNormFormaPago(p.metodo_pago) || "No";
+  const horaEstimada = String(p.hora_estimada || "").trim();
+  const totalStr = rossoMoney(p.total);
+  const tel = String(p.telefono || "");
+  const telFmt = tel.length === 8 ? `${tel.slice(0, 4)}-${tel.slice(4)}` : tel;
+
+  const hasRtn = Boolean(String(p.rtn_numero || "").trim() || String(p.rtn_nombre || "").trim());
+  const facturaRows = hasRtn
+    ? [
+        ["RTN", "Sí"],
+        ...(String(p.rtn_numero || "").trim() ? [["Número de RTN", String(p.rtn_numero).trim()]] : []),
+        ...(String(p.rtn_nombre || "").trim() ? [["Nombre del RTN", String(p.rtn_nombre).trim()]] : []),
+      ]
+    : [["RTN", "No solicitó RTN"]];
+
+  const comentarioRaw = String(p.comentario_cliente == null ? "" : p.comentario_cliente).trim();
+  const comentario = normComentarioCliente(comentarioRaw);
+  const comentarioRows = comentario && comentario !== "Ninguno" ? [["Comentario de cocina", comentario]] : [];
+
+  const pedidoMeta = [
+    ["Tipo", tipoServicio],
+    ["Forma de pago", formaPago],
+    ...(horaEstimada ? [["Hora estimada", horaEstimada]] : []),
+  ];
+
+  const items = parsed.items;
+  const lines = [
+    isMod ? "MODIFICACIÓN DE PEDIDO — Arnie's" : "Nuevo pedido — Arnie's",
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    `Restaurante: Arnie's`,
+    `Cliente: ${p.nombre}`,
+    `Teléfono: ${telFmt || p.telefono}`,
+    "",
+    isMod ? "MODIFICACIÓN DE PEDIDO" : "PEDIDO",
+    `Tipo: ${tipoServicio}`,
+    `Forma de pago: ${formaPago}`,
+    ...(horaEstimada ? [`Hora estimada: ${horaEstimada}`] : []),
+    "Detalle:",
+    items.join("\n"),
+    ...comentarioRows.map(([k, v]) => `${k}: ${v}`),
+    `Total: ${totalStr}`,
+    "",
+    ...facturaRows.map(([k, v]) => `${k}: ${v}`),
+    ...(p.notas ? ["", `Notas: ${p.notas}`] : []),
+  ];
+
+  const { kvTable, card } = EMAIL_UI;
+  const cards = [
+    card("Cliente", kvTable([
+      ["Restaurante", "Arnie's"],
+      ["Nombre", p.nombre],
+      ["Teléfono", telFmt],
+    ])),
+    card(isMod ? "MODIFICACIÓN DE PEDIDO" : "Pedido", kvTable(pedidoMeta) + EMAIL_UI.itemsTable(items, totalStr, comentarioRows)),
+    card("Factura", kvTable(facturaRows)),
+  ];
+  if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
+  const html = EMAIL_UI.shell(ts, isMod ? "MODIFICACIÓN DE PEDIDO" : "", cards);
+  return { subject, text: lines.join("\n"), html };
+}
+
 function buildRossoEmail(p) {
   if (isManzanoEvento(p)) return buildManzanoEventoEmail(p);
+  // Arnie's pedidos: plantilla propia. No altera Manzano, Izakaya, Chanchito, Wangs, etc.
+  if (p.sucursal === "Arnies" && p.tipo === "pedido") return buildArniesPedidoEmail(p);
   p = { ...p };
   if (p.sucursal === "El Chanchito") p = applyChanchitoPedidoFields(p);
   const ts = guatemalaTimestamp();
@@ -3077,5 +3206,9 @@ export {
   extractRosso,
   parseChanchitoPedido,
   parseManzanoPedido,
+  parseArniesPedido,
+  buildArniesPedidoEmail,
+  arniesNormTipoServicio,
+  arniesNormFormaPago,
   rossoTipoPedido,
 };
