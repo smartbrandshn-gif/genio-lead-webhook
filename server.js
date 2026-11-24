@@ -1490,17 +1490,16 @@ function buildArniesPedidoEmail(p) {
 
   const tipoServicio = arniesNormTipoServicio(p.tipo_servicio) || parsed.tipo || arniesNormTipoServicio(p.tipo_pedido) || "No";
   const formaPago = arniesNormFormaPago(p.forma_pago) || arniesNormFormaPago(p.metodo_pago) || "No";
-  const horaEstimada = String(p.hora_estimada || "").trim();
   const totalStr = rossoMoney(p.total);
   const tel = String(p.telefono || "");
   const telFmt = tel.length === 8 ? `${tel.slice(0, 4)}-${tel.slice(4)}` : tel;
 
-  const hasRtn = Boolean(String(p.rtn_numero || "").trim() || String(p.rtn_nombre || "").trim());
-  const facturaRows = hasRtn
+  const rtnNumero = String(p.rtn_numero || "").trim();
+  const rtnNombre = String(p.rtn_nombre || "").trim();
+  const facturaRows = (rtnNumero || rtnNombre)
     ? [
-        ["RTN", "Sí"],
-        ...(String(p.rtn_numero || "").trim() ? [["Número de RTN", String(p.rtn_numero).trim()]] : []),
-        ...(String(p.rtn_nombre || "").trim() ? [["Nombre del RTN", String(p.rtn_nombre).trim()]] : []),
+        ...(rtnNombre ? [["Nombre del RTN", rtnNombre]] : []),
+        ...(rtnNumero ? [["Número de RTN", rtnNumero]] : []),
       ]
     : [["RTN", "No solicitó RTN"]];
 
@@ -1518,10 +1517,10 @@ function buildArniesPedidoEmail(p) {
   const pedidoMeta = [
     ["Tipo", tipoServicio],
     ["Forma de pago", formaPago],
-    ...(horaEstimada ? [["Hora estimada", horaEstimada]] : []),
   ];
 
-  const items = parsed.items;
+  // La cantidad ya va en la línea del plato (p. ej. «2 Tacos…»). Precio unitario y subtotal no se muestran; el total del pedido sí.
+  const items = parsed.items.filter((it) => !/^\s*[-–—*·•]?\s*(cantidad|precio unitario|subtotal)\s*:/i.test(String(it).trim()));
   const lines = [
     isMod ? "MODIFICACIÓN DE PEDIDO — Arnie's" : "Nuevo pedido — Arnie's",
     "",
@@ -1533,7 +1532,6 @@ function buildArniesPedidoEmail(p) {
     isMod ? "MODIFICACIÓN DE PEDIDO" : "PEDIDO",
     `Tipo: ${tipoServicio}`,
     `Forma de pago: ${formaPago}`,
-    ...(horaEstimada ? [`Hora estimada: ${horaEstimada}`] : []),
     "Detalle:",
     items.join("\n"),
     ...extraRows.map(([k, v]) => `${k}: ${v}`),

@@ -98,7 +98,7 @@ check("correo: campos etiquetados, RTN vacío → No solicitó RTN, hora omitida
   assert.doesNotMatch(e.subject, /MODIFICACIÓN/);
 });
 
-check("correo: tipo_servicio, forma_pago, hora_estimada y RTN en campos propios", () => {
+check("correo: tipo_servicio, forma_pago y RTN en campos propios; sin hora estimada, Sí de RTN, cantidad, precio unitario ni subtotal", () => {
   const e = buildRossoEmail({
     ...base,
     tipo_servicio: "Para llevar",
@@ -113,10 +113,19 @@ check("correo: tipo_servicio, forma_pago, hora_estimada y RTN en campos propios"
   assert.equal(e.subject, "Nuevo pedido: Cliente Ejemplo");
   assert.match(e.text, /Tipo: Para llevar/);
   assert.match(e.text, /Forma de pago: Tarjeta/);
-  assert.match(e.text, /Hora estimada: 20-25 minutos/);
-  assert.match(e.text, /RTN: Sí/);
+  assert.doesNotMatch(e.text, /Hora estimada/);
+  assert.doesNotMatch(e.text, /RTN: Sí/);
+  assert.doesNotMatch(e.html, /Hora estimada|20-25 minutos/);
+  assert.doesNotMatch(e.html, />Sí</);
   assert.match(e.text, /Número de RTN: 0000-0000-000000/);
   assert.match(e.text, /Nombre del RTN: Cliente Ejemplo/);
+  assert.doesNotMatch(e.text, /Cantidad:/);
+  assert.doesNotMatch(e.text, /Precio unitario:/);
+  assert.doesNotMatch(e.text, /Subtotal:/);
+  assert.doesNotMatch(e.html, /Cantidad:/);
+  assert.doesNotMatch(e.html, /Precio unitario:/);
+  assert.doesNotMatch(e.html, /Subtotal:/);
+  assert.match(e.text, /2 Tacos de Lechón — 520 lempiras/);
   assert.match(e.text, /• Proteína: filete 9 oz, 10 camarones al ajillo/);
   assert.match(e.text, /• Término: roja/);
   assert.match(e.text, /1 Mar y Tierra — 1050 lempiras[\s\S]*• Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa[\s\S]*1 Media orden de lechón 4 oz/);
@@ -128,8 +137,8 @@ check("correo: tipo_servicio, forma_pago, hora_estimada y RTN en campos propios"
   assert.doesNotMatch(e.text, /Nota general/);
   assert.match(e.text, /Total: 2250 lempiras/);
   assert.match(e.html, /Link de pago|Tarjeta/);
-  assert.match(e.html, /20-25 minutos/);
   assert.match(e.html, /Número de RTN/);
+  assert.match(e.html, /Nombre del RTN/);
   assert.match(e.html, /• Proteína: filete 9 oz, 10 camarones al ajillo/);
   assert.match(e.html, /• Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa/);
   assert.match(e.html, /• Comentario de cocina: sin cebolla/);
