@@ -1127,6 +1127,8 @@ const IZAKAYA_TO_EMAIL = process.env.IZAKAYA_TO_EMAIL || "sarmientod6@gmail.com"
 const IZAKAYA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const ARNIES_TO_EMAIL = process.env.ARNIES_TO_EMAIL || "sarmientod6@gmail.com";
 const ARNIES_FROM = `"Genio Notificación" <genionotificaciones@gmail.com>`;
+const DISH_TO_EMAIL = process.env.DISH_TO_EMAIL || "sarmientod6@gmail.com";
+const DISH_FROM = `"Genio Notificación" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
 const PULHAPANZAC_RESERVA_TO_EMAIL = "sarmientod6@gmail.com, pulhahn@gmail.com, catarataspulhapanzak@gmail.com";
 const PULHAPANZAC_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
@@ -1135,7 +1137,7 @@ const FINCAZUNA_TO_EMAIL = process.env.FINCAZUNA_TO_EMAIL || "sarmientod6@gmail.
 const FINCAZUNA_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const CHANCHITO_TO_EMAIL = process.env.CHANCHITO_TO_EMAIL || "sarmientod6@gmail.com"; // TEMPORAL - solo pruebas: reemplazar por el correo real de El Chanchito antes de salir en vivo
 const CHANCHITO_FROM = `"El Chanchito Pedidos" <genionotificaciones@gmail.com>`;
-const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "El Chanchito" ? "El Chanchito" : p.sucursal === "Izakaya" ? "Izakaya Sushi Bar" : p.sucursal === "Arnies" ? "Arnie's" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
+const rossoBrand = (p) => (p.sucursal === "Manzano" ? "El Manzano" : p.sucursal === "El Chanchito" ? "El Chanchito" : p.sucursal === "Izakaya" ? "Izakaya Sushi Bar" : p.sucursal === "Dish" ? "Dish" : p.sucursal === "Arnies" ? "Arnie's" : p.sucursal === "Pulhapanzac" ? "PULHAPANZAK" : ["Tuchi"].includes(p.sucursal) ? p.sucursal : "Rosso Napoletano");
 
 function rossoNorm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -1149,6 +1151,7 @@ function rossoSucursal(raw) {
   if (s.includes("chanchito")) return "El Chanchito";
   if (s.includes("izakaya")) return "Izakaya";
   if (s.includes("arnie")) return "Arnies";
+  if (s.includes("dish")) return "Dish";
   if (s.includes("pulhapanz") || s.includes("pulapanz")) return "Pulhapanzac";
   if (s.includes("fincazuna") || s.includes("finca zuna") || s.includes("finca_zuna")) return "FincaZuna";
   return "";
@@ -1326,8 +1329,10 @@ function validateArniesReserva(p) {
 }
 
 function validateRosso(p) {
+  if (p.sucursal === "Dish") applyDishPedidoFields(p);
   if (isManzanoEvento(p)) return validateManzanoEvento(p);
   if (p.sucursal === "Arnies" && p.tipo === "reserva") return validateArniesReserva(p);
+  if (p.sucursal === "Dish" && p.tipo === "reserva") return validateArniesReserva(p);
   if (!p.tipo) return "tipo inválido: usa 'pedido', 'reserva' o 'ambos'";
   if (!p.sucursal) return "sucursal es requerida: 'Foresta' o 'Proceres'";
   if (!p.nombre || looksFake(p.nombre)) return "nombre es requerido";
@@ -1564,14 +1569,147 @@ function buildArniesPedidoEmail(p) {
   return { subject, text: lines.join("\n"), html };
 }
 
+
+function applyDishPedidoFields(p) {
+  if (!String(p.tipo_pedido || "").trim() && String(p.tipo_servicio || "").trim()) {
+    const t = arniesNormTipoServicio(p.tipo_servicio);
+    if (t === "Para llevar") p.tipo_pedido = "Para recoger";
+    else if (t) p.tipo_pedido = t;
+    else p.tipo_pedido = String(p.tipo_servicio).trim();
+  }
+  return p;
+}
+
+function buildDishReservaEmail(p) {
+  p = { ...p };
+  applyArniesReservaFields(p);
+  const ts = guatemalaTimestamp();
+  const nombre = String(p.reserva_nombre || p.nombre || "").trim() || "cliente";
+  const tel = String(p.telefono || "");
+  const telFmt = tel.length === 8 ? `${tel.slice(0, 4)}-${tel.slice(4)}` : tel;
+  const personas = String(p.reserva_personas || p.cantidad_personas || "");
+  const rows = [
+    ["Nombre completo", nombre],
+    ["Fecha", p.reserva_fecha],
+    ["Hora", p.reserva_hora],
+    ["Cantidad de personas", personas],
+    ["Teléfono", telFmt || tel],
+    ["Tipo de evento", String(p.tipo_evento || "").trim()],
+  ];
+  const subjectNombre = String(p.reserva_nombre || p.nombre || "").trim();
+  const subject = subjectNombre ? `Nueva reserva - ${subjectNombre}` : "Nueva reserva";
+  const lines = [
+    "Nueva reserva — Dish",
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    "",
+    "RESERVA",
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    ...(p.notas ? ["", `Notas: ${p.notas}`] : []),
+  ];
+  const cards = [EMAIL_UI.card("Reserva", EMAIL_UI.kvTable(rows))];
+  if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
+  const html = EMAIL_UI.shell(ts, "", cards);
+  return { subject, text: lines.join("\n"), html };
+}
+
+function buildDishPedidoEmail(p) {
+  p = { ...p };
+  const ts = guatemalaTimestamp();
+  const parsed = parseArniesPedido(p.pedido);
+  if (!p.rtn_numero && parsed.rtn) p.rtn_numero = parsed.rtn;
+  if (!p.rtn_nombre && parsed.rtnNombre) p.rtn_nombre = parsed.rtnNombre;
+
+  const who = String(p.nombre || "").trim() || "cliente";
+  const isMod = isArniesModificacion(p.comentario_cliente);
+  const subjectNombre = String(p.nombre || "").trim();
+  const subject = isMod
+    ? `MODIFICACIÓN DE PEDIDO: ${who}`
+    : (subjectNombre ? `Nuevo pedido - ${subjectNombre}` : "Nuevo pedido");
+
+  const tipoServicio = arniesNormTipoServicio(p.tipo_servicio) || parsed.tipo || arniesNormTipoServicio(p.tipo_pedido) || "No";
+  const formaPago = arniesNormFormaPago(p.forma_pago) || arniesNormFormaPago(p.metodo_pago) || "No";
+  const horaPedido = String(p.hora_estimada || p.hora_recogida || "").trim() || "No indicada";
+  const totalStr = rossoMoney(p.total);
+  const tel = String(p.telefono || "");
+  const telFmt = tel.length === 8 ? `${tel.slice(0, 4)}-${tel.slice(4)}` : tel;
+
+  const rtnNumero = String(p.rtn_numero || "").trim();
+  const rtnNombre = String(p.rtn_nombre || "").trim();
+  const facturaRows = (rtnNumero || rtnNombre)
+    ? [
+        ...(rtnNombre ? [["Nombre del RTN", rtnNombre]] : []),
+        ...(rtnNumero ? [["Número de RTN", rtnNumero]] : []),
+      ]
+    : [["RTN", "No solicitó RTN"]];
+
+  const comentarioRaw = String(p.comentario_cliente == null ? "" : p.comentario_cliente).trim();
+  let extraRows = [];
+  if (isMod) {
+    const detalle = comentarioRaw.replace(/^\s*MODIFICACI[OÓ]N DE PEDIDO\s*:\s*/i, "").trim();
+    extraRows = [["MODIFICACIÓN DE PEDIDO", detalle || comentarioRaw]];
+  } else {
+    const nota = normComentarioCliente(comentarioRaw);
+    if (nota && nota !== "Ninguno") extraRows = [["Nota general", nota]];
+  }
+
+  const pedidoMeta = [
+    ["Tipo", tipoServicio],
+    ["Forma de pago", formaPago],
+    ["Hora del pedido", horaPedido],
+  ];
+
+  const items = parsed.items.filter((it) => {
+    const s = String(it).trim();
+    if (/^\s*[-–—*·•]?\s*(cantidad|precio unitario|subtotal)\s*:/i.test(s)) return false;
+    if (/^\s*[-–—*·•]?\s*extra\s*(:.*)?$/i.test(s)) return false;
+    return true;
+  });
+  const lines = [
+    isMod ? "MODIFICACIÓN DE PEDIDO" : "Nuevo pedido",
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    `Cliente: ${p.nombre}`,
+    `Teléfono: ${telFmt || p.telefono}`,
+    "",
+    isMod ? "MODIFICACIÓN DE PEDIDO" : "PEDIDO",
+    `Tipo: ${tipoServicio}`,
+    `Forma de pago: ${formaPago}`,
+    `Hora del pedido: ${horaPedido}`,
+    "Detalle:",
+    items.join("\n"),
+    ...extraRows.map(([k, v]) => `${k}: ${v}`),
+    `Total: ${totalStr}`,
+    "",
+    ...facturaRows.map(([k, v]) => `${k}: ${v}`),
+    ...(p.notas ? ["", `Notas: ${p.notas}`] : []),
+  ];
+
+  const { kvTable, card } = EMAIL_UI;
+  const cards = [
+    card("Cliente", kvTable([
+      ["Nombre", p.nombre],
+      ["Teléfono", telFmt],
+    ])),
+    card(isMod ? "MODIFICACIÓN DE PEDIDO" : "Pedido", kvTable(pedidoMeta) + EMAIL_UI.itemsTable(items, totalStr, extraRows)),
+    card("Factura", kvTable(facturaRows)),
+  ];
+  if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
+  const html = EMAIL_UI.shell(ts, isMod ? "MODIFICACIÓN DE PEDIDO" : "", cards);
+  return { subject, text: lines.join("\n"), html };
+}
+
 function buildRossoEmail(p) {
   if (isManzanoEvento(p)) return buildManzanoEventoEmail(p);
   // Arnie's pedidos: plantilla propia. No altera Manzano, Izakaya, Chanchito, Wangs, etc.
   if (p.sucursal === "Arnies" && p.tipo === "pedido") return buildArniesPedidoEmail(p);
   // Arnie's reservas: 6 campos propios (incl. tipo_evento). No usa la plantilla de evento de Manzano.
   if (p.sucursal === "Arnies" && p.tipo === "reserva") return buildArniesReservaEmail(p);
+  if (p.sucursal === "Dish" && p.tipo === "pedido") return buildDishPedidoEmail(p);
+  if (p.sucursal === "Dish" && p.tipo === "reserva") return buildDishReservaEmail(p);
   p = { ...p };
   if (p.sucursal === "El Chanchito") p = applyChanchitoPedidoFields(p);
+  if (p.sucursal === "Dish") p = applyDishPedidoFields(p);
   const ts = guatemalaTimestamp();
   const hasPedido = p.tipo !== "reserva";
   const hasReserva = p.tipo !== "pedido";
@@ -2719,12 +2857,12 @@ async function handleRossoPedido(req, res) {
   const now = Date.now();
   for (const [k, t] of ROSSO_RECENT) if (now - t > 10 * 60 * 1000) ROSSO_RECENT.delete(k);
   if (ROSSO_RECENT.has(dupKey)) return res.json({ ok: true, duplicado: true, message: "Ya estaba enviado. No volver a enviar; despedirse." });
-  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "El Chanchito" ? CHANCHITO_TO_EMAIL : p.sucursal === "Izakaya" ? IZAKAYA_TO_EMAIL : p.sucursal === "Arnies" ? ARNIES_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
+  const toEmail = p.sucursal === "Pulhapanzac" ? (p.tipo === "reserva" ? PULHAPANZAC_RESERVA_TO_EMAIL : PULHAPANZAC_TO_EMAIL) : p.sucursal === "Manzano" ? MANZANO_TO_EMAIL : p.sucursal === "El Chanchito" ? CHANCHITO_TO_EMAIL : p.sucursal === "Izakaya" ? IZAKAYA_TO_EMAIL : p.sucursal === "Arnies" ? ARNIES_TO_EMAIL : p.sucursal === "Dish" ? DISH_TO_EMAIL : p.sucursal === "Tuchi" ? TUCHI_TO_EMAIL : p.sucursal === "Foresta" ? ROSSO_FORESTA_TO_EMAIL : ROSSO_PROCERES_TO_EMAIL;
   if (!SMTP_USER || !SMTP_APP_PASSWORD) return res.status(500).json({ ok: false, error: "SMTP no configurado" });
   const email = buildRossoEmail(p);
   if (process.env.ROSSO_DRY_RUN === "1") return res.json({ ok: true, dryRun: true, to: toEmail, ...email });
   try {
-    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "El Chanchito" ? CHANCHITO_FROM : p.sucursal === "Izakaya" ? IZAKAYA_FROM : p.sucursal === "Arnies" ? ARNIES_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
+    const info = await createTransport().sendMail({ from: p.sucursal === "Pulhapanzac" ? PULHAPANZAC_FROM : p.sucursal === "Manzano" ? MANZANO_FROM : p.sucursal === "El Chanchito" ? CHANCHITO_FROM : p.sucursal === "Izakaya" ? IZAKAYA_FROM : p.sucursal === "Arnies" ? ARNIES_FROM : p.sucursal === "Dish" ? DISH_FROM : p.sucursal === "Tuchi" ? TUCHI_FROM : ROSSO_FROM, to: toEmail, subject: email.subject, text: email.text, html: email.html });
     ROSSO_RECENT.set(dupKey, Date.now());
     console.log(`[rosso] enviado a ${toEmail} id=${info.messageId}`);
     return res.json({ ok: true, message: p.tipo === "reserva" ? "Reserva enviada" : "Pedido enviado", tipo: p.tipo, sucursal: p.sucursal, messageId: info.messageId, to: toEmail });
@@ -3287,6 +3425,9 @@ export {
   parseArniesPedido,
   buildArniesPedidoEmail,
   buildArniesReservaEmail,
+  applyDishPedidoFields,
+  buildDishPedidoEmail,
+  buildDishReservaEmail,
   applyArniesReservaFields,
   validateArniesReserva,
   arniesNormTipoServicio,
