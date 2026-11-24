@@ -1524,12 +1524,17 @@ function buildArniesPedidoEmail(p) {
   ];
 
   // La cantidad ya va en la línea del plato (p. ej. «2 Tacos…»). Precio unitario y subtotal no se muestran; el total del pedido sí.
-  const items = parsed.items.filter((it) => !/^\s*[-–—*·•]?\s*(cantidad|precio unitario|subtotal)\s*:/i.test(String(it).trim()));
+  // «• Extra» / «• Extra: …» son un desglose repetido: el extra ya va como línea propia del plato (p. ej. «1 Media orden de lechón 4 oz (extra)»).
+  const items = parsed.items.filter((it) => {
+    const s = String(it).trim();
+    if (/^\s*[-–—*·•]?\s*(cantidad|precio unitario|subtotal)\s*:/i.test(s)) return false;
+    if (/^\s*[-–—*·•]?\s*extra\s*(:.*)?$/i.test(s)) return false;
+    return true;
+  });
   const lines = [
     isMod ? "MODIFICACIÓN DE PEDIDO" : "Nuevo pedido",
     "",
     `Fecha (America/Guatemala): ${ts}`,
-    `Restaurante: Arnie's`,
     `Cliente: ${p.nombre}`,
     `Teléfono: ${telFmt || p.telefono}`,
     "",
@@ -1548,7 +1553,6 @@ function buildArniesPedidoEmail(p) {
   const { kvTable, card } = EMAIL_UI;
   const cards = [
     card("Cliente", kvTable([
-      ["Restaurante", "Arnie's"],
       ["Nombre", p.nombre],
       ["Teléfono", telFmt],
     ])),

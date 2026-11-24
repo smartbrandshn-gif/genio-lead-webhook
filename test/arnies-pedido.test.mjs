@@ -88,7 +88,8 @@ check("correo: campos etiquetados, RTN vacío → No solicitó RTN, hora omitida
   assert.match(e.text, /^Nuevo pedido\n/);
   assert.doesNotMatch(e.text, /^Arnie/);
   assert.doesNotMatch(e.text, /Nuevo pedido — Arnie/);
-  assert.match(e.text, /Restaurante: Arnie's/);
+  assert.doesNotMatch(e.text, /Restaurante:/);
+  assert.doesNotMatch(e.html, />Restaurante</);
   assert.match(e.text, /Tipo: Para llevar/);
   assert.match(e.text, /Forma de pago: No/);
   assert.doesNotMatch(e.text, /Hora estimada:/);
@@ -146,6 +147,22 @@ check("correo: tipo_servicio, forma_pago y RTN en campos propios; sin hora estim
   assert.match(e.html, /• Comentario de cocina: cambio de guarniciones: papas fritas y ensalada de la casa/);
   assert.match(e.html, /• Comentario de cocina: sin cebolla/);
   assert.doesNotMatch(e.html, /ISV/);
+});
+
+check("correo: el extra no se repite como viñeta y se conserva el comentario de cocina", () => {
+  const e = buildRossoEmail({
+    ...base,
+    tipo_servicio: "Comer en el restaurante",
+    forma_pago: "Tarjeta",
+    pedido: "Comer en el restaurante:\n1 Media orden de lechón 4 oz (extra) — 200 lempiras\n• Extra\n• Extra: media orden de lechón cuatro onzas extra\n- Comentario de cocina: bien dorada\n1 Brownie — 190 lempiras",
+    total: 390,
+  });
+  assert.match(e.text, /1 Media orden de lechón 4 oz \(extra\) — 200 lempiras\n• Comentario de cocina: bien dorada\n1 Brownie/);
+  assert.match(e.html, /• Comentario de cocina: bien dorada/);
+  assert.doesNotMatch(e.text, /• Extra/);
+  assert.doesNotMatch(e.html, /• Extra/);
+  assert.doesNotMatch(e.text, /Restaurante:/);
+  assert.doesNotMatch(e.html, />Restaurante</);
 });
 
 check("comentario_cliente que no es modificación se muestra una vez como Nota general, no como comentario de cocina agrupado", () => {
