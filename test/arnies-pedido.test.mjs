@@ -1,6 +1,6 @@
 process.env.GENIO_NO_LISTEN = "1";
 import assert from "node:assert/strict";
-import { buildRossoEmail, extractRosso, parseArniesPedido, arniesNormTipoServicio, arniesNormFormaPago } from "../server.js";
+import { buildRossoEmail, extractRosso, parseArniesPedido, arniesNormTipoServicio, arniesNormFormaPago, validateRosso } from "../server.js";
 
 let failed = 0;
 const check = (name, fn) => { try { fn(); console.log(`ok  ${name}`); } catch (e) { failed++; console.error(`FAIL ${name}`); console.error(e?.stack || e); } };
@@ -200,6 +200,193 @@ check("no altera el correo de Izakaya ni Manzano (sin campos nuevos de Arnie's)"
   assert.doesNotMatch(mz.text, /Hora estimada/);
   assert.doesNotMatch(mz.html, /Link de pago/);
   assert.doesNotMatch(mz.subject, /MODIFICACIÓN/);
+});
+
+
+const reservaBase = {
+  tipo: "reserva",
+  sucursal: "Arnies",
+  nombre: "Ana López",
+  telefono: "98765432",
+  telefono_confirmado: true,
+  reserva_fecha: "28/11/2026",
+  reserva_hora: "7:00 p. m.",
+  reserva_personas: 6,
+  tipo_evento: "Cumpleaños",
+};
+
+check("extractRosso lee tipo_evento y aliases; reserva_nombre y cantidad_personas siguen compatibles", () => {
+  const a = extractRosso(req({
+    sucursal: "Arnies",
+    tipo: "reserva",
+    nombre: "Ana López",
+    telefono: "9876-5432",
+    telefono_confirmado: true,
+    reserva_fecha: "28/11/2026",
+    reserva_hora: "7:00 p. m.",
+    reserva_personas: "6",
+    tipo_evento: "Cumpleaños",
+  }));
+  assert.equal(a.sucursal, "Arnies");
+  assert.equal(a.tipo, "reserva");
+  assert.equal(a.nombre, "Ana López");
+  assert.equal(a.reserva_nombre, "Ana López");
+  assert.equal(a.telefono, "98765432");
+  assert.equal(a.telefono_confirmado, true);
+  assert.equal(a.reserva_fecha, "28/11/2026");
+  assert.equal(a.reserva_hora, "7:00 p. m.");
+  assert.equal(a.reserva_personas, 6);
+  assert.equal(a.tipo_evento, "Cumpleaños");
+
+  const alias = extractRosso(req({
+    sucursal: "Arnies",
+    tipo: "reserva",
+    reserva_nombre: "Ana López",
+    telefono: "98765432",
+    cantidad_personas: "6",
+    reserva_fecha: "28/11/2026",
+    reserva_hora: "7:00 p. m.",
+    tipo_de_evento: "Aniversario",
+  }));
+  assert.equal(alias.nombre, "");
+  assert.equal(alias.reserva_nombre, "Ana López");
+  assert.equal(alias.reserva_personas, 6);
+  assert.equal(alias.cantidad_personas, 6);
+  assert.equal(alias.tipo_evento, "Aniversario");
+
+  const ev = extractRosso(req({
+    sucursal: "Arnies",
+    tipo: "reserva",
+    nombre: "Ana López",
+    evento: "Reunión",
+  }));
+  assert.equal(ev.tipo_evento, "Reunión");
+});
+
+check("validateRosso Arnie's reserva exige los 6 campos y telefono_confirmado; fallback Tipo de evento en notas", () => {
+  assert.equal(validateRosso({ ...reservaBase }), "");
+
+  const sinNombre = validateRosso({ ...reservaBase, nombre: "", reserva_nombre: "" });
+  assert.match(sinNombre, /nombre/);
+
+  const sinTel = validateRosso({ ...reservaBase, telefono: "" });
+  assert.match(sinTel, /telefono/);
+
+  const sinConf = validateRosso({ ...reservaBase, telefono_confirmado: false });
+  assert.match(sinConf, /telefono_confirmado/);
+
+  const sinFecha = validateRosso({ ...reservaBase, reserva_fecha: "" });
+  assert.match(sinFecha, /reserva_fecha/);
+
+  const sinHora = validateRosso({ ...reservaBase, reserva_hora: "" });
+  assert.match(sinHora, /reserva_hora/);
+
+  const sinPersonas = validateRosso({ ...reservaBase, reserva_personas: null, cantidad_personas: null });
+  assert.match(sinPersonas, /reserva_personas|cantidad_personas/);
+
+  const sinEvento = validateRosso({ ...reservaBase, tipo_evento: "" });
+  assert.match(sinEvento, /tipo_evento/);
+
+  const desdeNotas = { ...reservaBase, tipo_evento: "", notas: "Tipo de evento: Cumpleaños" };
+  assert.equal(validateRosso(desdeNotas), "");
+  assert.equal(desdeNotas.tipo_evento, "Cumpleaños");
+
+  const aliasNombre = { ...reservaBase, nombre: "", reserva_nombre: "Ana López" };
+  assert.equal(validateRosso(aliasNombre), "");
+  assert.equal(aliasNombre.nombre, "Ana López");
+
+  const aliasPers = { ...reservaBase, reserva_personas: null, cantidad_personas: 6 };
+  assert.equal(validateRosso(aliasPers), "");
+  assert.equal(aliasPers.reserva_personas, 6);
+});
+
+check("correo de reserva Arnie's: 6 campos propios, no plantilla de evento Manzano", () => {
+  const e = buildRossoEmail({ ...reservaBase });
+  assert.equal(e.subject, "Nueva reserva: Ana López");
+  assert.match(e.text, /Nueva reserva — Arnie's/);
+  assert.match(e.text, /Nombre completo: Ana López/);
+  assert.match(e.text, /Fecha: 28\/11\/2026/);
+  assert.match(e.text, /Hora: 7:00 p\. m\./);
+  assert.match(e.text, /Cantidad de personas: 6/);
+  assert.match(e.text, /Teléfono: 9876-5432/);
+  assert.match(e.text, /Tipo de evento: Cumpleaños/);
+  assert.doesNotMatch(e.text, /Nueva reserva de evento/);
+  assert.doesNotMatch(e.text, /A nombre de:/);
+  assert.doesNotMatch(e.text, /Notas:/);
+  assert.match(e.html, />Nombre completo</);
+  assert.match(e.html, />Ana López</);
+  assert.match(e.html, />Fecha</);
+  assert.match(e.html, />28\/11\/2026</);
+  assert.match(e.html, />Hora</);
+  assert.match(e.html, />7:00 p\. m\.</);
+  assert.match(e.html, />Cantidad de personas</);
+  assert.match(e.html, />Teléfono</);
+  assert.match(e.html, />9876-5432</);
+  assert.match(e.html, />Tipo de evento</);
+  assert.match(e.html, />Cumpleaños</);
+
+  const fallback = buildRossoEmail({ ...reservaBase, tipo_evento: "", notas: "Tipo de evento: Cumpleaños\nMesa junto a la ventana" });
+  assert.match(fallback.text, /Tipo de evento: Cumpleaños/);
+  assert.match(fallback.text, /Notas: Mesa junto a la ventana/);
+  assert.doesNotMatch(fallback.text, /Notas: Tipo de evento:/);
+});
+
+check("reserva de Manzano/Izakaya no cambia: evento Manzano sigue aparte; Izakaya no exige tipo_evento", () => {
+  const mzEvento = {
+    tipo: "reserva",
+    sucursal: "Manzano",
+    nombre: "Ana López",
+    telefono: "98765432",
+    telefono_confirmado: true,
+    reserva_fecha: "28/11/2026",
+    reserva_hora: "7:00 p. m.",
+    reserva_personas: 6,
+    tipo_evento: "Cumpleaños",
+  };
+  assert.equal(validateRosso(mzEvento), "");
+  const mzMail = buildRossoEmail(mzEvento);
+  assert.equal(mzMail.subject, "Nuevo evento: Ana López");
+  assert.match(mzMail.text, /Nueva reserva de evento — El Manzano/);
+  assert.match(mzMail.text, /Tipo de evento: Cumpleaños/);
+  assert.doesNotMatch(mzMail.text, /Nombre completo:/);
+  assert.doesNotMatch(mzMail.text, /Nueva reserva — Arnie's/);
+
+  const mzMesa = {
+    tipo: "reserva",
+    sucursal: "Manzano",
+    nombre: "Ana López",
+    reserva_nombre: "Ana López",
+    telefono: "98765432",
+    telefono_confirmado: true,
+    reserva_fecha: "28/11/2026",
+    reserva_hora: "7:00 p. m.",
+    reserva_personas: 6,
+  };
+  assert.equal(validateRosso(mzMesa), "");
+  const mzMesaMail = buildRossoEmail(mzMesa);
+  assert.equal(mzMesaMail.subject, "Nueva reserva: Ana López");
+  assert.match(mzMesaMail.text, /RESERVA DE MESA/);
+  assert.match(mzMesaMail.text, /A nombre de: Ana López/);
+  assert.doesNotMatch(mzMesaMail.text, /Tipo de evento:/);
+  assert.doesNotMatch(mzMesaMail.text, /Nombre completo:/);
+
+  const iz = {
+    tipo: "reserva",
+    sucursal: "Izakaya",
+    nombre: "Ana López",
+    reserva_nombre: "Ana López",
+    telefono: "98765432",
+    telefono_confirmado: true,
+    reserva_fecha: "28/11/2026",
+    reserva_hora: "7:00 p. m.",
+    reserva_personas: 6,
+  };
+  assert.equal(validateRosso(iz), "");
+  const izMail = buildRossoEmail(iz);
+  assert.equal(izMail.subject, "Nueva reserva: Ana López");
+  assert.match(izMail.text, /RESERVA DE MESA/);
+  assert.doesNotMatch(izMail.text, /Tipo de evento:/);
+  assert.doesNotMatch(izMail.text, /Nueva reserva — Arnie's/);
 });
 
 if (failed) {

@@ -1298,8 +1298,36 @@ function validateManzanoEvento(p) {
   return "";
 }
 
+function applyArniesReservaFields(p) {
+  if (!String(p.reserva_nombre || "").trim() && String(p.nombre || "").trim()) p.reserva_nombre = p.nombre;
+  if (!String(p.nombre || "").trim() && String(p.reserva_nombre || "").trim()) p.nombre = p.reserva_nombre;
+  if (!p.reserva_personas && p.cantidad_personas) p.reserva_personas = p.cantidad_personas;
+  if (!String(p.tipo_evento || "").trim()) {
+    const notas = String(p.notas || p.notas_cliente || "");
+    const m = notas.match(/^\s*Tipo de evento:\s*([^\n\r]*)/i);
+    if (m && m[1].trim()) {
+      p.tipo_evento = m[1].trim();
+      p.notas = notas.replace(/^\s*Tipo de evento:\s*[^\n\r]*\r?\n?/, "").trim();
+    }
+  }
+  return p;
+}
+
+function validateArniesReserva(p) {
+  applyArniesReservaFields(p);
+  if (!p.nombre || looksFake(p.nombre)) return "Reserva: nombre es requerido (nombre completo de quien reserva)";
+  if (!p.telefono) return "Reserva: telefono es requerido: 8 dígitos sin 504";
+  if (p.telefono_confirmado !== true) return "BLOQUEADO: telefono_confirmado debe ser true. Repita el teléfono al cliente en pares, espere que diga sí y vuelva a enviar con telefono_confirmado=true";
+  if (!String(p.reserva_fecha || "").trim()) return "Reserva: reserva_fecha es requerida";
+  if (!String(p.reserva_hora || "").trim()) return "Reserva: reserva_hora es requerida";
+  if (!p.reserva_personas) return "Reserva: reserva_personas / cantidad_personas es requerido (número de personas)";
+  if (!String(p.tipo_evento || "").trim()) return "Reserva: tipo_evento es requerido (ej. cumpleaños, aniversario, reunión)";
+  return "";
+}
+
 function validateRosso(p) {
   if (isManzanoEvento(p)) return validateManzanoEvento(p);
+  if (p.sucursal === "Arnies" && p.tipo === "reserva") return validateArniesReserva(p);
   if (!p.tipo) return "tipo inválido: usa 'pedido', 'reserva' o 'ambos'";
   if (!p.sucursal) return "sucursal es requerida: 'Foresta' o 'Proceres'";
   if (!p.nombre || looksFake(p.nombre)) return "nombre es requerido";
@@ -1417,6 +1445,38 @@ function parseArniesPedido(raw) {
   return { tipo, pago: "", rtn, rtnNombre, items: items.length ? items : [String(raw || "").trim()] };
 }
 
+function buildArniesReservaEmail(p) {
+  p = { ...p };
+  applyArniesReservaFields(p);
+  const ts = guatemalaTimestamp();
+  const nombre = String(p.reserva_nombre || p.nombre || "").trim() || "cliente";
+  const tel = String(p.telefono || "");
+  const telFmt = tel.length === 8 ? `${tel.slice(0, 4)}-${tel.slice(4)}` : tel;
+  const personas = String(p.reserva_personas || p.cantidad_personas || "");
+  const rows = [
+    ["Nombre completo", nombre],
+    ["Fecha", p.reserva_fecha],
+    ["Hora", p.reserva_hora],
+    ["Cantidad de personas", personas],
+    ["Teléfono", telFmt || tel],
+    ["Tipo de evento", String(p.tipo_evento || "").trim()],
+  ];
+  const subject = `Nueva reserva: ${nombre}`;
+  const lines = [
+    "Nueva reserva — Arnie's",
+    "",
+    `Fecha (America/Guatemala): ${ts}`,
+    "",
+    "RESERVA",
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    ...(p.notas ? ["", `Notas: ${p.notas}`] : []),
+  ];
+  const cards = [EMAIL_UI.card("Reserva", EMAIL_UI.kvTable(rows))];
+  if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));
+  const html = EMAIL_UI.shell(ts, "", cards);
+  return { subject, text: lines.join("\n"), html };
+}
+
 function buildArniesPedidoEmail(p) {
   p = { ...p };
   const ts = guatemalaTimestamp();
@@ -1502,6 +1562,8 @@ function buildRossoEmail(p) {
   if (isManzanoEvento(p)) return buildManzanoEventoEmail(p);
   // Arnie's pedidos: plantilla propia. No altera Manzano, Izakaya, Chanchito, Wangs, etc.
   if (p.sucursal === "Arnies" && p.tipo === "pedido") return buildArniesPedidoEmail(p);
+  // Arnie's reservas: 6 campos propios (incl. tipo_evento). No usa la plantilla de evento de Manzano.
+  if (p.sucursal === "Arnies" && p.tipo === "reserva") return buildArniesReservaEmail(p);
   p = { ...p };
   if (p.sucursal === "El Chanchito") p = applyChanchitoPedidoFields(p);
   const ts = guatemalaTimestamp();
@@ -3218,6 +3280,9 @@ export {
   parseManzanoPedido,
   parseArniesPedido,
   buildArniesPedidoEmail,
+  buildArniesReservaEmail,
+  applyArniesReservaFields,
+  validateArniesReserva,
   arniesNormTipoServicio,
   arniesNormFormaPago,
   rossoTipoPedido,
