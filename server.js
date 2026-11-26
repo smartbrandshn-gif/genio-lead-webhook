@@ -1129,7 +1129,7 @@ const ARNIES_TO_EMAIL = process.env.ARNIES_TO_EMAIL || "sarmientod6@gmail.com";
 const ARNIES_FROM = `"Genio Notificación" <genionotificaciones@gmail.com>`;
 // Arnie's Express (food court, solo para recoger). Correo TEMPORAL = mismo destinatario que Arnie's; cambiar con la env ARNIES_EXPRESS_TO_EMAIL o aquí.
 const ARNIES_EXPRESS_TO_EMAIL = process.env.ARNIES_EXPRESS_TO_EMAIL || process.env.ARNIES_TO_EMAIL || "sarmientod6@gmail.com";
-const ARNIES_EXPRESS_FROM = `"Arnie's Express" <genionotificaciones@gmail.com>`;
+const ARNIES_EXPRESS_FROM = `"Genio Notificaciones" <genionotificaciones@gmail.com>`;
 const DISH_TO_EMAIL = process.env.DISH_TO_EMAIL || "sarmientod6@gmail.com";
 const DISH_FROM = `"Genio Notificación" <genionotificaciones@gmail.com>`;
 const PULHAPANZAC_TO_EMAIL = process.env.PULHAPANZAC_TO_EMAIL || "sarmientod6@gmail.com";
@@ -1724,10 +1724,8 @@ function buildArniesExpressPedidoEmail(p) {
     ? `Arnie's Express - MODIFICACIÓN DE PEDIDO: ${who}`
     : (subjectNombre ? `Arnie's Express - Nuevo pedido - ${subjectNombre}` : "Arnie's Express - Nuevo pedido");
 
-  // Arnie's Express: todo pedido es para recoger
-  const tipoServicio = "Para recoger";
-  const formaPago = arniesNormFormaPago(p.forma_pago) || arniesNormFormaPago(p.metodo_pago) || "No";
-  const horaPedido = String(p.hora_estimada || p.hora_recogida || "").trim() || "Lo antes posible";
+  // Express no muestra en el correo las filas de tipo, forma de pago ni hora
+  // (el agente puede seguir enviando esos params; no se renderizan).
   const totalStr = rossoMoney(p.total);
   const tel = String(p.telefono || "");
   const telFmt = tel.length === 8 ? `${tel.slice(0, 4)}-${tel.slice(4)}` : tel;
@@ -1751,12 +1749,6 @@ function buildArniesExpressPedidoEmail(p) {
     if (nota && nota !== "Ninguno") extraRows = [["Nota general", nota]];
   }
 
-  const pedidoMeta = [
-    ["Tipo", tipoServicio],
-    ["Forma de pago", formaPago],
-    ["Hora del pedido", horaPedido],
-  ];
-
   const items = parsed.items.filter((it) => {
     const s = String(it).trim();
     if (/^\s*[-–—*·•]?\s*(cantidad|precio unitario|subtotal)\s*:/i.test(s)) return false;
@@ -1771,9 +1763,6 @@ function buildArniesExpressPedidoEmail(p) {
     `Teléfono: ${telFmt || p.telefono}`,
     "",
     isMod ? "MODIFICACIÓN DE PEDIDO" : "PEDIDO",
-    `Tipo: ${tipoServicio}`,
-    `Forma de pago: ${formaPago}`,
-    `Hora del pedido: ${horaPedido}`,
     "Detalle:",
     items.join("\n"),
     ...extraRows.map(([k, v]) => `${k}: ${v}`),
@@ -1789,7 +1778,7 @@ function buildArniesExpressPedidoEmail(p) {
       ["Nombre", p.nombre],
       ["Teléfono", telFmt],
     ])),
-    card(isMod ? "MODIFICACIÓN DE PEDIDO" : "Pedido", kvTable(pedidoMeta) + EMAIL_UI.itemsTable(items, totalStr, extraRows)),
+    card(isMod ? "MODIFICACIÓN DE PEDIDO" : "Pedido", EMAIL_UI.itemsTable(items, totalStr, extraRows)),
     card("Factura", kvTable(facturaRows)),
   ];
   if (p.notas) cards.push(EMAIL_UI.notasCard(p.notas));

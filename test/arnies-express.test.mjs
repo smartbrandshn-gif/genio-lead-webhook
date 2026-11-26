@@ -27,28 +27,31 @@ check("reserva Express se rechaza", () => {
   assert.match(validateRosso(q), /solo toma pedidos/);
 });
 
-check("correo Express: asunto, hora del pedido, RTN, pago, total, siempre para recoger", () => {
+check("correo Express: asunto, RTN, total; sin Tipo, Forma de pago ni Hora del pedido", () => {
   const p = extractRosso(req({ ...base, tipo_servicio: "comer en el restaurante", rtn_numero: "08011999123456", rtn_nombre: "Empresa X" }));
   validateRosso(p);
   const email = buildRossoEmail(p);
   assert.equal(email.subject, "Arnie's Express - Nuevo pedido - Ana López");
-  assert.match(email.text, /Tipo: Para recoger/);
   assert.doesNotMatch(email.text, /Comer en el restaurante/);
-  assert.match(email.text, /Hora del pedido: 1:30 P\.M\./);
-  assert.match(email.text, /Forma de pago: Efectivo/);
+  assert.doesNotMatch(email.text, /^Tipo:/m);
+  assert.doesNotMatch(email.text, /Forma de pago/);
+  assert.doesNotMatch(email.text, /Hora del pedido/);
+  assert.doesNotMatch(email.html, /Forma de pago/);
+  assert.doesNotMatch(email.html, /Hora del pedido/);
+  assert.doesNotMatch(email.html, />Tipo</);
   assert.match(email.text, /Total: 100 lempiras/);
   assert.match(email.text, /Teléfono: 9999-8888/);
   assert.match(email.text, /Nombre del RTN: Empresa X/);
   assert.match(email.text, /Número de RTN: 08011999123456/);
   assert.match(email.text, /Comentario de cocina: sin cebolla/);
   assert.match(email.text, /Fecha \(America\/Guatemala\)/);
-  assert.match(email.html, /Hora del pedido/);
 });
 
-check("correo Express: sin RTN, hora vacia y modificacion", () => {
+check("correo Express: sin RTN y modificacion (sin hora en el correo)", () => {
   const e1 = buildRossoEmail(extractRosso(req({ ...base, hora_estimada: "" })));
   assert.match(e1.text, /RTN: No solicitó RTN/);
-  assert.match(e1.text, /Hora del pedido: Lo antes posible/);
+  assert.doesNotMatch(e1.text, /Hora del pedido/);
+  assert.doesNotMatch(e1.html, /Hora del pedido/);
   const e2 = buildRossoEmail(extractRosso(req({ ...base, comentario_cliente: "MODIFICACIÓN DE PEDIDO: quitar la bebida", pedido: "MODIFICACIÓN", total: 0 })));
   assert.equal(e2.subject, "Arnie's Express - MODIFICACIÓN DE PEDIDO: Ana López");
 });
