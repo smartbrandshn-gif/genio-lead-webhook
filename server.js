@@ -1721,8 +1721,8 @@ function buildArniesExpressPedidoEmail(p) {
   const isMod = isArniesModificacion(p.comentario_cliente);
   const subjectNombre = String(p.nombre || "").trim();
   const subject = isMod
-    ? `Arnie's Express - MODIFICACIÓN DE PEDIDO: ${who}`
-    : (subjectNombre ? `Arnie's Express - Nuevo pedido - ${subjectNombre}` : "Arnie's Express - Nuevo pedido");
+    ? `MODIFICACIÓN DE PEDIDO: ${who}`
+    : (subjectNombre ? `Nuevo pedido - ${subjectNombre}` : "Nuevo pedido");
 
   // Express no muestra en el correo las filas de tipo, forma de pago ni hora
   // (el agente puede seguir enviando esos params; no se renderizan).
